@@ -1,0 +1,89 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: fitcoach-db
+    environment:
+      POSTGRES_USER: fitcoach
+      POSTGRES_PASSWORD: fitcoach_dev
+      POSTGRES_DB: fitcoach
+    # No host port mapping — only accessible within Docker network.
+    # Use `make db-shell` to access via docker compose exec.
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fitcoach"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # Dedicated test database — runs on a different port to avoid
+  # conflicts with the main database. Used by `make test`.
+  postgres-test:
+    image: pgvector/pgvector:pg16
+    container_name: fitcoach-db-test
+    environment:
+      POSTGRES_USER: fitcoach
+      POSTGRES_PASSWORD: fitcoach_dev
+      POSTGRES_DB: fitcoach_test
+    ports:
+      - "5433:5432"
+    profiles: ["test"]
+    networks:
+      - default          # explicitly join the shared network so backend can reach it
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fitcoach -d fitcoach_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: fitcoach-redis
+    # No host port mapping — only accessible within Docker network.
+    # Use `make redis-cli` to access via docker compose exec.
+    volumes:
+      - redisdata:/data
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: fitcoach-backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://fitcoach:fitcoach_dev@postgres:5432/fitcoach
+      REDIS_URL: redis://redis:6379/0
+      TEST_DATABASE_URL: postgresql+asyncpg://fitcoach:fitcoach_dev@postgres-test:5432/fitcoach_test?ssl=disable
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - uploaded_docs:/app/uploads
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+volumes:
+  pgdata:
+  redisdata:
+  uploaded_docs:
