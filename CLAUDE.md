@@ -36,10 +36,8 @@ Build a fitness knowledge assistant powered by RAG + multi-agent architecture. U
 - `scripts/init.sql` — Database initialization (CREATE EXTENSION vector; CREATE TABLES)
 
 ## Current Focus
-Phase 2 Day 7: Chat API + Redis caching
-- `POST /chat` endpoint invokes agent graph and returns response. 
-- SSE streaming works (routing → sources → tokens → done). 
-- Redis query caching: second identical query returns from cache. 
-- Rate limiting: 21st request within 1 minute returns 429. 
-- Integration tests for chat endpoint (3+ cases). 
-- Cache service tests (3+ cases).
+Phase 3 Day 8: React project setup + login page
+- Vite + React + TailwindCSS + Zustand initialized. 
+- Login and registration forms connect to backend API. 
+- JWT token stored and attached to subsequent requests. 
+- Protected routes redirect to login when unauthenticated.
