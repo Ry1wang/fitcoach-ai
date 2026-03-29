@@ -5,6 +5,8 @@ from fastapi import FastAPI
 from sqlalchemy import text
 
 from app.api import auth as auth_router
+from app.api import chat as chat_router
+from app.api import documents as documents_router
 from app.deps import engine, get_redis
 
 
@@ -42,6 +44,8 @@ app = FastAPI(
 
 
 app.include_router(auth_router.router, prefix="/api/v1")
+app.include_router(documents_router.router, prefix="/api/v1")
+app.include_router(chat_router.router, prefix="/api/v1")
 
 
 @app.get("/health")

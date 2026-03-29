@@ -36,9 +36,10 @@ Build a fitness knowledge assistant powered by RAG + multi-agent architecture. U
 - `scripts/init.sql` — Database initialization (CREATE EXTENSION vector; CREATE TABLES)
 
 ## Current Focus
-Phase 1 Day 3: JWT auth system + test foundation
-- `POST /auth/register` and `POST /auth/login` work correctly. 
-- Protected endpoints return 401 without valid token. 
-- `conftest.py` created with `test_engine`, `db_session`, `client`, `auth_headers` fixtures. 
-- `test_api_auth.py` has at least 5 test cases — all green.
--  `make test` runs the suite successfully inside Docker.
+Phase 2 Day 7: Chat API + Redis caching
+- `POST /chat` endpoint invokes agent graph and returns response. 
+- SSE streaming works (routing → sources → tokens → done). 
+- Redis query caching: second identical query returns from cache. 
+- Rate limiting: 21st request within 1 minute returns 429. 
+- Integration tests for chat endpoint (3+ cases). 
+- Cache service tests (3+ cases).

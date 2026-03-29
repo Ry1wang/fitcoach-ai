@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 import redis.asyncio as aioredis
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
+from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -24,6 +25,14 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
     async with async_session() as session:
         yield session
+
+
+def get_llm_client() -> AsyncOpenAI:
+    """Factory for the LLM chat client (provider-agnostic via OpenAI-compatible SDK)."""
+    return AsyncOpenAI(
+        api_key=settings.LLM_API_KEY,
+        base_url=settings.LLM_BASE_URL,
+    )
 
 
 def get_redis() -> aioredis.Redis:
