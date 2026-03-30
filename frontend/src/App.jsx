@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import useStore from "./store/useStore";
 import Login from "./components/Login";
+import Register from "./components/Register";
 import Layout from "./components/Layout";
 import ChatPanel from "./components/ChatPanel";
 
@@ -29,6 +30,14 @@ export default function App() {
           element={
             <PublicRoute>
               <Login />
+            </PublicRoute>
+          }
+        />
+        <Route
+          path="/register"
+          element={
+            <PublicRoute>
+              <Register />
             </PublicRoute>
           }
         />
