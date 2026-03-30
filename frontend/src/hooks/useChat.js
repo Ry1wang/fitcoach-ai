@@ -1,6 +1,12 @@
 import { useCallback, useRef, useState } from "react";
 import client from "../api/client";
 
+// crypto.randomUUID() requires HTTPS; this fallback works over plain HTTP too
+const genId = () =>
+  typeof crypto !== "undefined" && crypto.randomUUID
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2) + Date.now().toString(36);
+
 const AGENT_LABELS = {
   training: "训练",
   rehab: "康复",
@@ -54,11 +60,11 @@ export default function useChat() {
       setRoutingInfo(null);
 
       // Optimistic user message
-      const userMsg = { id: crypto.randomUUID(), role: "user", content: text };
+      const userMsg = { id: genId(), role: "user", content: text };
       setMessages((prev) => [...prev, userMsg]);
 
       // Placeholder for assistant response
-      const assistantId = crypto.randomUUID();
+      const assistantId = genId();
       setMessages((prev) => [
         ...prev,
         { id: assistantId, role: "assistant", content: "", sources: null, agent_used: null },
