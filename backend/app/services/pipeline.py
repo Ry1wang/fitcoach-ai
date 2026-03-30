@@ -1,11 +1,15 @@
 """Document ingestion pipeline: parse → chunk → embed → store."""
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
+from sqlalchemy import select
+
 from app.deps import async_session
+from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.services.document_service import update_document_status
 from app.services.embedding_service import generate_embeddings
@@ -40,8 +44,13 @@ async def run_ingestion_pipeline(
                 session, doc_id, user_id, status="processing"
             )
 
-            # 2–4. Parse PDF and build chunk dicts (sync CPU work)
-            raw_chunks = chunk_document(file_path, filename, domain)
+            # 2–4. Parse PDF and build chunk dicts
+            # Run sync CPU-intensive work in a thread pool to avoid blocking
+            # the event loop (PDF parsing + text splitting can be slow).
+            loop = asyncio.get_running_loop()
+            raw_chunks = await loop.run_in_executor(
+                None, chunk_document, file_path, filename, domain
+            )
             if not raw_chunks:
                 await update_document_status(
                     session,
@@ -56,7 +65,19 @@ async def run_ingestion_pipeline(
             texts = [c["content"] for c in raw_chunks]
             embeddings = await generate_embeddings(texts)
 
-            # 6. Batch-insert chunks
+            # 6. Verify document still exists (may have been deleted mid-processing)
+            stmt = select(Document.id).where(
+                Document.id == doc_id, Document.user_id == user_id
+            )
+            result = await session.execute(stmt)
+            if result.scalar_one_or_none() is None:
+                logger.warning(
+                    "Document %s was deleted during processing, skipping chunk insert",
+                    doc_id,
+                )
+                return
+
+            # 7. Batch-insert chunks
             db_chunks = [
                 DocumentChunk(
                     document_id=doc_id,
@@ -71,7 +92,7 @@ async def run_ingestion_pipeline(
             ]
             session.add_all(db_chunks)
 
-            # 7. Mark ready — commit also flushes the pending chunk inserts
+            # 8. Mark ready — commit also flushes the pending chunk inserts
             await update_document_status(
                 session,
                 doc_id,
@@ -82,10 +103,16 @@ async def run_ingestion_pipeline(
 
         except Exception as exc:  # noqa: BLE001
             logger.exception("Ingestion pipeline failed for doc_id=%s", doc_id)
-            await update_document_status(
-                session,
-                doc_id,
-                user_id,
-                status="failed",
-                error_message=str(exc)[:1000],
-            )
+            try:
+                await update_document_status(
+                    session,
+                    doc_id,
+                    user_id,
+                    status="failed",
+                    error_message=str(exc)[:1000],
+                )
+            except Exception:
+                logger.warning(
+                    "Could not mark doc %s as failed (possibly already deleted)",
+                    doc_id,
+                )

@@ -1,5 +1,6 @@
 import { Outlet } from "react-router-dom";
 import useStore from "../store/useStore";
+import DocumentPanel from "./DocumentPanel";
 
 export default function Layout() {
   const logout = useStore((s) => s.logout);
@@ -17,9 +18,11 @@ export default function Layout() {
         </button>
       </header>
 
-      {/* Main content area — placeholder for Day 9-10 panels */}
       <main className="flex flex-1 overflow-hidden">
-        <Outlet />
+        <DocumentPanel />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <Outlet />
+        </div>
       </main>
     </div>
   );

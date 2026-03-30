@@ -1,4 +1,8 @@
+import warnings
+
 from pydantic_settings import BaseSettings
+
+_INSECURE_DEFAULT_SECRET = "your-secret-key-change-in-production"
 
 
 class Settings(BaseSettings):
@@ -24,7 +28,7 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSION: int = 1024
 
     # Auth
-    JWT_SECRET: str = "your-secret-key-change-in-production"
+    JWT_SECRET: str = _INSECURE_DEFAULT_SECRET
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 1440
 
@@ -52,3 +56,10 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+if settings.JWT_SECRET == _INSECURE_DEFAULT_SECRET:
+    warnings.warn(
+        "JWT_SECRET is using the insecure default value! "
+        "Set JWT_SECRET in .env before deploying to production.",
+        stacklevel=1,
+    )

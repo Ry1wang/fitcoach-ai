@@ -1,6 +1,8 @@
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import Column, ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
 from sqlmodel import Field, SQLModel
 
 
@@ -12,7 +14,9 @@ class Document(SQLModel, table=True):
     __tablename__ = "documents"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    user_id: uuid.UUID = Field(foreign_key="users.id")
+    user_id: uuid.UUID = Field(
+        sa_column=Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
+    )
     filename: str = Field(max_length=255)
     file_path: str = Field(max_length=500)
     file_size: int | None = Field(default=None)

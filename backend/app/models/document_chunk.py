@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Column, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Column, ForeignKey, Text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlmodel import Field, SQLModel
 
 from app.config import settings
@@ -18,7 +18,9 @@ class DocumentChunk(SQLModel, table=True):
     __tablename__ = "document_chunks"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    document_id: uuid.UUID = Field(foreign_key="documents.id")
+    document_id: uuid.UUID = Field(
+        sa_column=Column(UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False),
+    )
     content: str = Field(sa_column=Column(Text, nullable=False))
     chunk_index: int
     chunk_type: str | None = Field(default=None, max_length=50)

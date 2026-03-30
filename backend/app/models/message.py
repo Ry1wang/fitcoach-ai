@@ -2,8 +2,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import Column
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Column, ForeignKey
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlmodel import Field, SQLModel
 
 
@@ -15,7 +15,9 @@ class Message(SQLModel, table=True):
     __tablename__ = "messages"
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
-    conversation_id: uuid.UUID = Field(foreign_key="conversations.id")
+    conversation_id: uuid.UUID = Field(
+        sa_column=Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False),
+    )
     role: str = Field(max_length=20)
     content: str
     agent_used: str | None = Field(default=None, max_length=50)

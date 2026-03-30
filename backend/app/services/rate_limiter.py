@@ -24,9 +24,11 @@ class RateLimiter:
     async def check(self, user_id: str) -> bool:
         """Return True if the request is allowed, False if rate-limited."""
         key = self._key(user_id)
-        count = await self._redis.incr(key)
-        if count == 1:
-            await self._redis.expire(key, self._window)
+        async with self._redis.pipeline(transaction=True) as pipe:
+            pipe.incr(key)
+            pipe.expire(key, self._window)
+            results = await pipe.execute()
+        count = results[0]
         return count <= self._max
 
     async def get_remaining(self, user_id: str) -> int:

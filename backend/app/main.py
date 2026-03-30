@@ -6,13 +6,14 @@ from sqlalchemy import text
 
 from app.api import auth as auth_router
 from app.api import chat as chat_router
+from app.api import conversations as conversations_router
 from app.api import documents as documents_router
-from app.deps import engine, get_redis
+from app.deps import close_redis, engine, get_redis
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Verify DB and Redis connections on startup."""
+    """Verify DB and Redis connections on startup; clean up on shutdown."""
     # Database
     try:
         async with engine.connect() as conn:
@@ -25,13 +26,13 @@ async def lifespan(app: FastAPI):
     try:
         r = get_redis()
         await r.ping()
-        await r.aclose()
         print("✓ Redis connection verified")
     except Exception as e:
         print(f"✗ Redis connection failed: {e}")
 
     yield
 
+    await close_redis()
     await engine.dispose()
 
 
@@ -46,6 +47,7 @@ app = FastAPI(
 app.include_router(auth_router.router, prefix="/api/v1")
 app.include_router(documents_router.router, prefix="/api/v1")
 app.include_router(chat_router.router, prefix="/api/v1")
+app.include_router(conversations_router.router, prefix="/api/v1")
 
 
 @app.get("/health")
@@ -69,7 +71,6 @@ async def health_check():
         start = datetime.now(timezone.utc)
         await r.ping()
         latency_ms = (datetime.now(timezone.utc) - start).total_seconds() * 1000
-        await r.aclose()
         checks["redis"] = {"status": "up", "latency_ms": round(latency_ms, 1)}
     except Exception as e:
         checks["redis"] = {"status": "down", "error": str(e)}

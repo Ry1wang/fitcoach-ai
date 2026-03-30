@@ -1,0 +1,62 @@
+[
+  {
+    "content": "引体向上是上肢拉力训练中最基础也是最重要的动作之一。初学者应从澳式引体（水平引体）开始，逐步过渡到标准引体向上。",
+    "chunk_index": 0,
+    "chunk_type": "plain",
+    "metadata": {
+      "source_book": "囚徒健身",
+      "chapter": "第5章 铠甲般的背部：引体向上",
+      "page_start": 112,
+      "content_domain": "training"
+    },
+    "embedding_dim": 1024
+  },
+  {
+    "content": "膝关节扭伤后的康复分为三个阶段：急性期（0-72小时）以RICE原则为主；亚急性期（3-14天）开始轻度活动范围训练；恢复期（2-6周）逐步加入力量训练。",
+    "chunk_index": 0,
+    "chunk_type": "plain",
+    "metadata": {
+      "source_book": "运动损伤康复指南",
+      "chapter": "第3章 下肢常见损伤",
+      "page_start": 78,
+      "content_domain": "rehab"
+    },
+    "embedding_dim": 1024
+  },
+  {
+    "content": "增肌期蛋白质摄入建议为每公斤体重1.6-2.2克。优质蛋白来源包括鸡胸肉、鸡蛋、牛肉、鱼类和大豆制品。每餐摄入20-40克蛋白质可最大化肌肉蛋白合成。",
+    "chunk_index": 0,
+    "chunk_type": "plain",
+    "metadata": {
+      "source_book": "运动营养学",
+      "chapter": "第7章 蛋白质与肌肉生长",
+      "page_start": 203,
+      "content_domain": "nutrition"
+    },
+    "embedding_dim": 1024
+  },
+  {
+    "content": "| 训练阶段 | 组数 | 次数 | 休息时间 |\n| 初级 | 3 | 5-8 | 120秒 |\n| 中级 | 4 | 8-12 | 90秒 |\n| 高级 | 5 | 12-15 | 60秒 |",
+    "chunk_index": 1,
+    "chunk_type": "table",
+    "metadata": {
+      "source_book": "囚徒健身",
+      "chapter": "第2章 训练原则",
+      "page_start": 45,
+      "content_domain": "training"
+    },
+    "embedding_dim": 1024
+  },
+  {
+    "content": "减脂期每日热量缺口建议控制在300-500千卡。过大的热量缺口会导致肌肉流失，影响基础代谢率。建议通过增加运动量和适度减少碳水化合物摄入来实现热量缺口。",
+    "chunk_index": 1,
+    "chunk_type": "plain",
+    "metadata": {
+      "source_book": "运动营养学",
+      "chapter": "第10章 减脂饮食策略",
+      "page_start": 289,
+      "content_domain": "nutrition"
+    },
+    "embedding_dim": 1024
+  }
+]

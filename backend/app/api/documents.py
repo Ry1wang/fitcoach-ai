@@ -1,3 +1,4 @@
+import shutil
 import uuid
 from pathlib import Path
 
@@ -50,10 +51,25 @@ async def upload_document(
             },
         )
 
-    # Read and validate file size
-    contents = await file.read()
+    # Save file to disk via streaming (avoids loading entire file into memory)
+    user_dir = Path(settings.UPLOAD_DIR) / str(current_user.id)
+    user_dir.mkdir(parents=True, exist_ok=True)
+
+    doc_uuid = uuid.uuid4()
+    file_path = user_dir / f"{doc_uuid}{suffix}"
     max_bytes = settings.MAX_FILE_SIZE_MB * 1024 * 1024
-    if len(contents) > max_bytes:
+
+    try:
+        with open(file_path, "wb") as f:
+            shutil.copyfileobj(file.file, f, length=1024 * 64)  # 64 KB chunks
+        file_size = file_path.stat().st_size
+    except Exception:
+        # Clean up partial file on write failure
+        file_path.unlink(missing_ok=True)
+        raise
+
+    if file_size > max_bytes:
+        file_path.unlink(missing_ok=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
@@ -62,22 +78,15 @@ async def upload_document(
             },
         )
 
-    # Save file to disk: {UPLOAD_DIR}/{user_id}/{doc_uuid}.pdf
-    user_dir = Path(settings.UPLOAD_DIR) / str(current_user.id)
-    user_dir.mkdir(parents=True, exist_ok=True)
-
-    doc_uuid = uuid.uuid4()
-    file_path = str(user_dir / f"{doc_uuid}{suffix}")
-    with open(file_path, "wb") as f:
-        f.write(contents)
+    file_path_str = str(file_path)
 
     # Create pending DB record
     doc = await create_document(
         session,
         user_id=current_user.id,
         filename=file.filename or f"{doc_uuid}{suffix}",
-        file_path=file_path,
-        file_size=len(contents),
+        file_path=file_path_str,
+        file_size=file_size,
         domain=domain,
     )
 
@@ -86,7 +95,7 @@ async def upload_document(
         run_ingestion_pipeline,
         doc_id=doc.id,
         user_id=current_user.id,
-        file_path=file_path,
+        file_path=file_path_str,
         filename=doc.filename,
         domain=domain,
     )

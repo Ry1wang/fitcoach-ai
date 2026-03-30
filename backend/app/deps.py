@@ -27,16 +27,37 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+# ── Singleton clients ─────────────────────────────────────────────────────
+
+_llm_client: AsyncOpenAI | None = None
+_redis_client: aioredis.Redis | None = None
+
+
 def get_llm_client() -> AsyncOpenAI:
-    """Factory for the LLM chat client (provider-agnostic via OpenAI-compatible SDK)."""
-    return AsyncOpenAI(
-        api_key=settings.LLM_API_KEY,
-        base_url=settings.LLM_BASE_URL,
-    )
+    """Singleton LLM chat client (reuses HTTP connection pool)."""
+    global _llm_client
+    if _llm_client is None:
+        _llm_client = AsyncOpenAI(
+            api_key=settings.LLM_API_KEY,
+            base_url=settings.LLM_BASE_URL,
+        )
+    return _llm_client
 
 
 def get_redis() -> aioredis.Redis:
-    return aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    """Singleton Redis client (reuses connection pool)."""
+    global _redis_client
+    if _redis_client is None:
+        _redis_client = aioredis.from_url(settings.REDIS_URL, decode_responses=True)
+    return _redis_client
+
+
+async def close_redis() -> None:
+    """Shutdown hook — close the Redis connection pool."""
+    global _redis_client
+    if _redis_client is not None:
+        await _redis_client.aclose()
+        _redis_client = None
 
 
 async def get_current_user(

@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import useStore from "./store/useStore";
 import Login from "./components/Login";
 import Layout from "./components/Layout";
+import ChatPanel from "./components/ChatPanel";
 
 function ProtectedRoute({ children }) {
   const isAuthenticated = useStore((s) => s.isAuthenticated);
@@ -39,14 +40,7 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          <Route
-            index
-            element={
-              <div className="flex flex-1 items-center justify-center text-gray-400">
-                欢迎使用 FitCoach AI
-              </div>
-            }
-          />
+          <Route index element={<ChatPanel />} />
         </Route>
       </Routes>
     </BrowserRouter>

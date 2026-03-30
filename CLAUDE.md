@@ -36,8 +36,8 @@ Build a fitness knowledge assistant powered by RAG + multi-agent architecture. U
 - `scripts/init.sql` — Database initialization (CREATE EXTENSION vector; CREATE TABLES)
 
 ## Current Focus
-Phase 3 Day 8: React project setup + login page
-- Vite + React + TailwindCSS + Zustand initialized. 
-- Login and registration forms connect to backend API. 
-- JWT token stored and attached to subsequent requests. 
-- Protected routes redirect to login when unauthenticated.
+Phase 3 Day 12: Docker optimization + full system test
+- Multi-stage Dockerfiles (builder pattern for frontend). 
+- `docker compose up` from clean state works without manual steps. 
+- Full end-to-end test: register → upload → wait for processing → chat → get cited response. 
+- Memory usage verified under 8GB total.

@@ -95,3 +95,59 @@ async def get_recent_messages(
     result = await session.execute(stmt)
     messages = list(result.scalars().all())
     return list(reversed(messages))  # oldest first
+
+
+async def list_conversations(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+) -> list[Conversation]:
+    """Return all conversations for a user, newest first."""
+    stmt = (
+        select(Conversation)
+        .where(Conversation.user_id == user_id)
+        .order_by(Conversation.updated_at.desc())
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_conversation_messages(
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> list[Message] | None:
+    """Return all messages for a conversation owned by user. None if not found."""
+    stmt = select(Conversation).where(
+        Conversation.id == conversation_id,
+        Conversation.user_id == user_id,
+    )
+    result = await session.execute(stmt)
+    if result.scalar_one_or_none() is None:
+        return None
+
+    stmt = (
+        select(Message)
+        .where(Message.conversation_id == conversation_id)
+        .order_by(Message.created_at.asc())
+    )
+    result = await session.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def delete_conversation(
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> bool:
+    """Delete a conversation owned by user. Returns False if not found."""
+    stmt = select(Conversation).where(
+        Conversation.id == conversation_id,
+        Conversation.user_id == user_id,
+    )
+    result = await session.execute(stmt)
+    conv = result.scalar_one_or_none()
+    if conv is None:
+        return False
+    await session.delete(conv)
+    await session.commit()
+    return True

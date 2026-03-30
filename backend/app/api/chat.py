@@ -193,18 +193,8 @@ async def _generate_events(
             full_response += REHAB_DISCLAIMER
             yield _sse({"type": "token", "content": REHAB_DISCLAIMER})
 
-        # ── Done ───────────────────────────────────────────────────────────
+        # ── Persist + cache (before done — so client disconnect won't lose data)
         latency = int((time.time() - start) * 1000)
-        yield _sse(
-            {
-                "type": "done",
-                "agent_used": agent,
-                "latency_ms": latency,
-                "conversation_id": str(conversation_id),
-            }
-        )
-
-        # ── Persist + cache ────────────────────────────────────────────────
         await save_message(
             session,
             conversation_id,
@@ -220,6 +210,16 @@ async def _generate_events(
                 str(user_id),
                 {"response": full_response, "sources": sources, "agent_used": agent, "refined_query": refined_query},
             )
+
+        # ── Done ───────────────────────────────────────────────────────────
+        yield _sse(
+            {
+                "type": "done",
+                "agent_used": agent,
+                "latency_ms": latency,
+                "conversation_id": str(conversation_id),
+            }
+        )
 
     except Exception as exc:  # noqa: BLE001
         logger.exception("SSE stream error for user_id=%s conversation_id=%s", user_id, conversation_id)
