@@ -62,6 +62,7 @@ def _format_sources(chunks: list[ChunkResult]) -> list[dict]:
                 "content_preview": c.content[:100],
                 "source_book": meta.get("source_book", ""),
                 "chapter": meta.get("chapter", ""),
+                "section": meta.get("section", ""),
                 "relevance_score": round(c.relevance_score, 4),
             }
         )
@@ -114,7 +115,12 @@ async def _generate_events(
                     }
                 )
                 yield _sse({"type": "sources", "chunks": cached["sources"]})
-                yield _sse({"type": "token", "content": cached["response"]})
+                # Stream cached response in small chunks to preserve the typing effect
+                # (split by character count to work correctly with Chinese text)
+                _CHUNK = 8
+                text = cached["response"]
+                for i in range(0, len(text), _CHUNK):
+                    yield _sse({"type": "token", "content": text[i : i + _CHUNK]})
                 yield _sse(
                     {
                         "type": "done",
@@ -284,7 +290,11 @@ async def chat(
             redis=redis,
         ),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Prevent Nginx from buffering SSE
+        },
     )
 
 

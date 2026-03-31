@@ -47,7 +47,7 @@ export default function useDocuments() {
         setUploading(false);
       }
     },
-    [fetchDocuments],
+    [fetchDocuments], // eslint-disable-line react-hooks/exhaustive-deps -- startPolling is stable (declared after this hook, so can't be in deps array without reordering)
   );
 
   // ── Delete ──────────��───────────────────────────────────��───────────────

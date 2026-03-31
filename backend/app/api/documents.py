@@ -1,4 +1,3 @@
-import shutil
 import uuid
 from pathlib import Path
 
@@ -60,23 +59,29 @@ async def upload_document(
     max_bytes = settings.MAX_FILE_SIZE_MB * 1024 * 1024
 
     try:
+        file_size = 0
         with open(file_path, "wb") as f:
-            shutil.copyfileobj(file.file, f, length=1024 * 64)  # 64 KB chunks
-        file_size = file_path.stat().st_size
+            while True:
+                chunk = file.file.read(1024 * 64)  # 64 KB chunks
+                if not chunk:
+                    break
+                file_size += len(chunk)
+                if file_size > max_bytes:
+                    file_path.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail={
+                            "error": "FILE_TOO_LARGE",
+                            "message": f"File exceeds the {settings.MAX_FILE_SIZE_MB} MB limit",
+                        },
+                    )
+                f.write(chunk)
+    except HTTPException:
+        raise
     except Exception:
         # Clean up partial file on write failure
         file_path.unlink(missing_ok=True)
         raise
-
-    if file_size > max_bytes:
-        file_path.unlink(missing_ok=True)
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "error": "FILE_TOO_LARGE",
-                "message": f"File exceeds the {settings.MAX_FILE_SIZE_MB} MB limit",
-            },
-        )
 
     file_path_str = str(file_path)
 

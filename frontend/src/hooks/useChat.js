@@ -23,6 +23,8 @@ export default function useChat() {
 
   // ── Load conversation history ───────────────────────────────────────────
   const loadConversation = useCallback(async (convId) => {
+    // Abort any in-progress stream before switching conversations
+    abortRef.current?.abort();
     setError("");
     setRoutingInfo(null);
     try {
@@ -188,7 +190,20 @@ export default function useChat() {
       } catch (err) {
         if (err.name !== "AbortError") {
           setError("网络连接失败");
-          setMessages((prev) => prev.filter((m) => m.id !== assistantId));
+          // Preserve any partial content already received; mark it as interrupted
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    content: m.content
+                      ? m.content + "\n\n⚠️ 网络中断，回复可能不完整"
+                      : "",
+                    interrupted: true,
+                  }
+                : m,
+            ).filter((m) => m.id !== assistantId || m.content !== ""),
+          );
         }
       } finally {
         setStreaming(false);

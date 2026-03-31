@@ -36,8 +36,8 @@ Build a fitness knowledge assistant powered by RAG + multi-agent architecture. U
 - `scripts/init.sql` — Database initialization (CREATE EXTENSION vector; CREATE TABLES)
 
 ## Current Focus
-Phase 3 Day 12: Docker optimization + full system test
-- Multi-stage Dockerfiles (builder pattern for frontend). 
-- `docker compose up` from clean state works without manual steps. 
-- Full end-to-end test: register → upload → wait for processing → chat → get cited response. 
-- Memory usage verified under 8GB total.
+Phase 4 Day 13: Mac Mini deployment + Feishu integration
+- All services running on Mac Mini via Docker Compose. 
+- React frontend accessible from browser on same network. 
+- OpenClaw successfully calls `POST /chat` and relays response to Feishu. 
+- System stable for at least 1 hour of intermittent use.

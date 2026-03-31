@@ -1,4 +1,5 @@
 """PDF parsing, chunking, and chunk-type classification."""
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -6,6 +7,8 @@ from typing import Any
 import fitz  # PyMuPDF
 import pdfplumber
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+logger = logging.getLogger(__name__)
 
 # Patterns that indicate an exercise description chunk
 _EXERCISE_PATTERNS = [
@@ -40,29 +43,49 @@ def classify_chunk(text: str, is_table: bool = False) -> str:
 
 
 def _extract_pages(file_path: str) -> list[dict[str, Any]]:
-    """Extract per-page text (PyMuPDF) and tables (pdfplumber)."""
+    """Extract per-page text (PyMuPDF) and tables (pdfplumber).
+
+    Raises ValueError for encrypted PDFs or files that cannot be parsed.
+    """
     text_by_page: dict[int, str] = {}
-    with fitz.open(file_path) as pdf:
-        for page_num, page in enumerate(pdf):
-            text_by_page[page_num] = page.get_text()
+    try:
+        with fitz.open(file_path) as pdf:
+            if pdf.is_encrypted:
+                raise ValueError("PDF is encrypted and cannot be processed without a password")
+            for page_num, page in enumerate(pdf):
+                text_by_page[page_num] = page.get_text()
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise ValueError(f"Failed to read PDF with PyMuPDF: {exc}") from exc
 
     tables_by_page: dict[int, list[str]] = {}
-    with pdfplumber.open(file_path) as pdf:
-        for page_num, page in enumerate(pdf.pages):
-            raw_tables = page.extract_tables()
-            if not raw_tables:
-                continue
-            formatted = []
-            for table in raw_tables:
-                rows = [
-                    " | ".join(str(cell) if cell else "" for cell in row)
-                    for row in table
-                    if row
-                ]
-                if rows:
-                    formatted.append("\n".join(rows))
-            if formatted:
-                tables_by_page[page_num] = formatted
+    try:
+        with pdfplumber.open(file_path) as pdf:
+            for page_num, page in enumerate(pdf.pages):
+                try:
+                    raw_tables = page.extract_tables()
+                except Exception:
+                    logger.warning("pdfplumber failed to extract tables from page %d, skipping", page_num)
+                    continue
+                if not raw_tables:
+                    continue
+                formatted = []
+                for table in raw_tables:
+                    rows = [
+                        " | ".join(str(cell) if cell else "" for cell in row)
+                        for row in table
+                        if row
+                    ]
+                    if rows:
+                        formatted.append("\n".join(rows))
+                if formatted:
+                    tables_by_page[page_num] = formatted
+    except ValueError:
+        raise
+    except Exception as exc:
+        # Table extraction is best-effort; log and continue without tables
+        logger.warning("pdfplumber failed to open PDF for table extraction: %s", exc)
 
     pages = []
     for page_num in sorted(text_by_page.keys()):

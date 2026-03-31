@@ -22,13 +22,19 @@ class RateLimiter:
         return f"ratelimit:{user_id}:{bucket}"
 
     async def check(self, user_id: str) -> bool:
-        """Return True if the request is allowed, False if rate-limited."""
+        """Return True if the request is allowed, False if rate-limited.
+
+        TTL is set only when the key is first created (SET NX EX), so the
+        window is anchored to the first request rather than sliding forward
+        on every subsequent call.
+        """
         key = self._key(user_id)
         async with self._redis.pipeline(transaction=True) as pipe:
+            # SET NX EX creates the key with TTL only if it doesn't exist yet
+            pipe.set(key, 0, nx=True, ex=self._window)
             pipe.incr(key)
-            pipe.expire(key, self._window)
             results = await pipe.execute()
-        count = results[0]
+        count = results[1]
         return count <= self._max
 
     async def get_remaining(self, user_id: str) -> int:

@@ -18,7 +18,7 @@ async def get_or_create_conversation(
     session: AsyncSession,
     conversation_id: uuid.UUID | None,
     user_id: uuid.UUID,
-) -> Conversation:
+) -> Conversation | None:
     """Return an existing conversation or create a new one.
 
     Returns None if conversation_id is given but not found / not owned by user.

@@ -9,12 +9,18 @@ from tenacity import (
 
 from app.config import settings
 
+# Module-level singleton to reuse the HTTP connection pool across calls
+_client: AsyncOpenAI | None = None
+
 
 def _get_client() -> AsyncOpenAI:
-    return AsyncOpenAI(
-        api_key=settings.effective_embedding_api_key,
-        base_url=settings.effective_embedding_base_url,
-    )
+    global _client
+    if _client is None:
+        _client = AsyncOpenAI(
+            api_key=settings.effective_embedding_api_key,
+            base_url=settings.effective_embedding_base_url,
+        )
+    return _client
 
 
 @retry(

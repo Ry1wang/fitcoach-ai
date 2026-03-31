@@ -20,7 +20,11 @@ from app.services.conversation_service import (
     update_conversation_title,
 )
 
-router = APIRouter(prefix="/v1", tags=["compat"])
+router = APIRouter(
+    prefix="/v1",
+    tags=["compat"],
+    responses={401: {"description": "Invalid or missing BOT_API_KEY"}},
+)
 
 
 class _Msg(BaseModel):
@@ -33,7 +37,15 @@ class _OAIRequest(BaseModel):
     messages: list[_Msg]
 
 
-@router.post("/chat/completions")
+@router.post(
+    "/chat/completions",
+    summary="OpenAI-compatible chat (Feishu/OpenClaw)",
+    description=(
+        "Accepts an OpenAI-style chat completions request and returns a non-streaming JSON response. "
+        "Used by OpenClaw to relay Feishu messages to FitCoach RAG. "
+        "Authenticate with `Authorization: Bearer <BOT_API_KEY>`."
+    ),
+)
 async def openai_compat(
     body: _OAIRequest,
     authorization: str | None = Header(default=None),
@@ -70,6 +82,7 @@ async def openai_compat(
         await update_conversation_title(session, conv.id, user_content[:100])
 
     reply = ""
+    error_msg: str | None = None
     async for raw in _generate_events(
         request=chat_req,
         user_id=bot_user.id,
@@ -88,6 +101,11 @@ async def openai_compat(
             continue
         if event.get("type") == "token":
             reply += event.get("content", "")
+        elif event.get("type") == "error":
+            error_msg = event.get("message", "内部错误")
+
+    if error_msg and not reply:
+        raise HTTPException(status_code=500, detail=error_msg)
 
     return JSONResponse({
         "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",

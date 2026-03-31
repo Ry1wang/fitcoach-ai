@@ -64,6 +64,10 @@ async def run_ingestion_pipeline(
             # 5. Generate embeddings (async, batched, with retry)
             texts = [c["content"] for c in raw_chunks]
             embeddings = await generate_embeddings(texts)
+            if len(embeddings) != len(texts):
+                raise RuntimeError(
+                    f"Embedding count mismatch: expected {len(texts)}, got {len(embeddings)}"
+                )
 
             # 6. Verify document still exists (may have been deleted mid-processing)
             stmt = select(Document.id).where(
