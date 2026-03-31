@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 20
 
+    # Bot integration (OpenClaw / Feishu)
+    BOT_API_KEY: str = ""
+    BOT_USER_ID: str = ""
+
     @property
     def effective_embedding_api_key(self) -> str:
         return self.EMBEDDING_API_KEY or self.LLM_API_KEY

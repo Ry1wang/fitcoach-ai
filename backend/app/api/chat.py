@@ -1,6 +1,4 @@
-"""POST /chat — SSE streaming chat endpoint with Redis caching and rate limiting.
-POST /chat/sync — Non-streaming JSON endpoint for OpenClaw / Feishu bot integration.
-"""
+"""POST /chat — SSE streaming chat endpoint with Redis caching and rate limiting."""
 import json
 import logging
 import time
@@ -290,79 +288,3 @@ async def chat(
     )
 
 
-@router.post("/sync", summary="Non-streaming chat for bot integrations (OpenClaw/Feishu)")
-async def chat_sync(
-    request: ChatRequest,
-    current_user: User = Depends(get_current_user),
-    session: AsyncSession = Depends(get_session),
-):
-    """Collects the full SSE stream internally and returns a single JSON response.
-    Intended for OpenClaw / Feishu bot — no SSE handling required on the client side.
-    """
-    redis = get_redis()
-
-    limiter = RateLimiter(redis, max_requests=settings.RATE_LIMIT_PER_MINUTE)
-    if not await limiter.check(str(current_user.id)):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={"error": "RATE_LIMIT_EXCEEDED", "message": f"Maximum {settings.RATE_LIMIT_PER_MINUTE} requests per minute"},
-            headers={"Retry-After": "60"},
-        )
-
-    conv = await get_or_create_conversation(session, request.conversation_id, current_user.id)
-    if conv is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": "NOT_FOUND", "message": "Conversation not found"},
-        )
-
-    history = await get_recent_messages(session, conv.id, limit=10)
-    history_dicts = [{"role": m.role, "content": m.content} for m in history]
-    is_first = len(history) == 0
-
-    await save_message(session, conv.id, "user", request.message)
-    if is_first:
-        await update_conversation_title(session, conv.id, request.message[:100])
-
-    # Consume the SSE generator and collect the final result
-    reply = ""
-    agent_used = "training"
-    sources: list[dict] = []
-    latency_ms = 0
-
-    async for raw in _generate_events(
-        request=request,
-        user_id=current_user.id,
-        conversation_id=conv.id,
-        history_dicts=history_dicts,
-        is_first=is_first,
-        session=session,
-        redis=redis,
-    ):
-        # raw is "data: {...}\n\n"
-        line = raw.strip()
-        if not line.startswith("data:"):
-            continue
-        try:
-            event = json.loads(line[len("data:"):].strip())
-        except json.JSONDecodeError:
-            continue
-
-        etype = event.get("type")
-        if etype == "token":
-            reply += event.get("content", "")
-        elif etype == "sources":
-            sources = event.get("chunks", [])
-        elif etype == "done":
-            agent_used = event.get("agent_used", agent_used)
-            latency_ms = event.get("latency_ms", 0)
-        elif etype == "error":
-            raise HTTPException(status_code=500, detail=event.get("message", "Internal error"))
-
-    return JSONResponse({
-        "reply": reply,
-        "agent_used": agent_used,
-        "sources": sources,
-        "conversation_id": str(conv.id),
-        "latency_ms": latency_ms,
-    })

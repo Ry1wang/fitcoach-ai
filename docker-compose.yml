@@ -2,6 +2,7 @@ services:
   postgres:
     image: pgvector/pgvector:pg16
     container_name: fitcoach-db
+    restart: unless-stopped
     environment:
       POSTGRES_USER: fitcoach
       POSTGRES_PASSWORD: fitcoach_dev
@@ -44,6 +45,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: fitcoach-redis
+    restart: unless-stopped
     # No host port mapping — only accessible within Docker network.
     # Use `make redis-cli` to access via docker compose exec.
     volumes:
@@ -64,6 +66,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: fitcoach-backend
+    restart: unless-stopped
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://fitcoach:fitcoach_dev@postgres:5432/fitcoach
@@ -78,6 +81,12 @@ services:
         condition: service_healthy
     volumes:
       - uploaded_docs:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     deploy:
       resources:
         limits:
@@ -88,6 +97,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: fitcoach-frontend
+    restart: unless-stopped
     ports:
       - "3000:3000"
     depends_on:
