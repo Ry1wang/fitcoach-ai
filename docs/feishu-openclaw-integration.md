@@ -137,9 +137,9 @@ curl -X POST http://localhost:8000/api/v1/auth/register \
 **2. 用机器人账号上传健身 PDF**
 
 ```bash
-# 登录获取 token
+# 登录获取 token（username 字段填注册时的 email）
 TOKEN=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
-  -d "username=feishu-bot&password=<强密码>" \
+  -d "username=feishu-bot@fitcoachapp.com&password=<强密码>" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 # 上传 PDF
@@ -193,4 +193,5 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 | `500 Bot user not found` | `BOT_USER_ID` 错误 | 重新执行步骤1，确认 UUID 格式正确 |
 | `500 BOT_USER_ID not configured` | `.env` 变量未生效 | 重启 Docker Compose |
 | 飞书消息无响应 | OpenClaw 未启动或凭证错误 | 运行 `openclaw gateway status` |
+| `KeyError: 'access_token'` | 登录失败，响应无该字段 | 登录接口 `username` 字段必须填注册时的 **email**，不是用户名 |
 | 回复内容空白 | PDF 未上传到机器人账号 | 用机器人账号重新上传文档 |
