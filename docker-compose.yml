@@ -7,8 +7,6 @@ services:
       POSTGRES_USER: fitcoach
       POSTGRES_PASSWORD: fitcoach_dev
       POSTGRES_DB: fitcoach
-    # No host port mapping — only accessible within Docker network.
-    # Use `make db-shell` to access via docker compose exec.
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -22,8 +20,6 @@ services:
         limits:
           memory: 512M
 
-  # Dedicated test database — runs on a different port to avoid
-  # conflicts with the main database. Used by `make test`.
   postgres-test:
     image: pgvector/pgvector:pg16
     container_name: fitcoach-db-test
@@ -35,7 +31,7 @@ services:
       - "5433:5432"
     profiles: ["test"]
     networks:
-      - default          # explicitly join the shared network so backend can reach it
+      - default
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U fitcoach -d fitcoach_test"]
       interval: 5s
@@ -46,8 +42,6 @@ services:
     image: redis:7-alpine
     container_name: fitcoach-redis
     restart: unless-stopped
-    # No host port mapping — only accessible within Docker network.
-    # Use `make redis-cli` to access via docker compose exec.
     volumes:
       - redisdata:/data
     command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
@@ -72,8 +66,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://fitcoach:fitcoach_dev@postgres:5432/fitcoach
       REDIS_URL: redis://redis:6379/0
       TEST_DATABASE_URL: postgresql+asyncpg://fitcoach:fitcoach_dev@postgres-test:5432/fitcoach_test?ssl=disable
-    ports:
-      - "8000:8000"
+    # ✅ 移除 ports — 只在 Docker 内网暴露，由 Nginx 代理
+    expose:
+      - "8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -98,14 +93,34 @@ services:
       dockerfile: Dockerfile
     container_name: fitcoach-frontend
     restart: unless-stopped
-    ports:
-      - "3000:3000"
+    # ✅ 移除 ports — 由 Nginx 代理静态文件
+    expose:
+      - "3000"
     depends_on:
       - backend
     deploy:
       resources:
         limits:
           memory: 256M
+
+  # ✅ 新增 Nginx — Cloudflare Tunnel 的唯一入口
+  nginx:
+    image: nginx:alpine
+    container_name: fitcoach-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"          # cloudflared 指向 localhost:80
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          memory: 64M
 
 volumes:
   pgdata:
