@@ -1,6 +1,20 @@
 # FitCoach AI
 
-A fitness knowledge assistant powered by RAG + multi-agent architecture. Upload fitness PDF books (e.g. Convict Conditioning), then chat with specialized AI agents — Training, Rehab, and Nutrition — and receive grounded answers with source citations.
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
+![Python Version](https://img.shields.io/badge/python-3.11+-blue)
+![License](https://img.shields.io/badge/license-MIT-orange)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-teal)
+![React](https://img.shields.io/badge/React-18-blue)
+
+**Upload any fitness book, get expert answers with page-level citations — powered by a multi-agent RAG system.**
+
+## Screenshots
+
+### Web Interface
+![Web Interface](docs/screenshots/fitcoach-web.png)
+
+### Feishu Bot Integration
+![Feishu Bot Integration](docs/screenshots/fitcoach-feishu.PNG)
 
 ---
 
@@ -51,6 +65,25 @@ User (Web / Feishu)
 3. Specialist Agent retrieves relevant chunks from pgvector (filtered by `content_domain`)
 4. LLM generates answer grounded in retrieved passages with citations
 5. Response cached in Redis; subsequent identical queries served from cache
+
+---
+
+## Architecture Rationale
+
+- **Supervisor-Worker (LangGraph) vs. Single Agent**: 
+  - *Problem*: A single agent often suffers from "intent drift" and context pollution when handling diverse fitness domains (e.g., mixing rehab precautions with hypertrophy volume).
+  - *Decision*: Separate specialized agents (Training, Rehab, Nutrition) coordinated by a Supervisor Router.
+  - *Why*: Ensures domain isolation, reduces prompt complexity, and allows for specialized retrieval strategies per domain.
+
+- **pgvector vs. Dedicated Vector DB (Chroma/Pinecone)**:
+  - *Problem*: Maintaining a separate relational DB for users/conversations and a standalone vector DB increases operational overhead and risk of data desync.
+  - *Decision*: Use PostgreSQL with the `pgvector` extension.
+  - *Why*: Unified ACID-compliant storage for both relational data and embeddings; simplified backup/restore; single source of truth.
+
+- **Decoupled Embedding vs. Chat Models**:
+  - *Problem*: Tying embedding and chat to the same provider (e.g., pure OpenAI) limits cost-efficiency and performance optimization.
+  - *Decision*: Independent service layers for Embedding (local Ollama) and LLM (remote DeepSeek/OpenAI).
+  - *Why*: Allows using fast, zero-cost local embeddings for bulk PDF processing while leveraging high-reasoning remote models for final answer generation.
 
 ---
 
@@ -256,3 +289,13 @@ docker compose exec backend python -m app.scripts.reprocess
 - **Feishu + GLM tool-calling**: `zai/glm-4.7` requires `tools.allow: [exec, shell, bash]` in `openclaw.json` to execute SKILL.md bash commands. This introduces shell execution privileges on the host machine. See security notes in the Feishu integration guide.
 - **Non-fitness questions**: The Router Agent routes to training/rehab/nutrition only. Questions outside these domains currently receive a "no relevant content" response.
 - **Single-user embedding model**: All users share the same Ollama instance on the host; no embedding model fallback if Ollama is down.
+
+---
+
+## Roadmap
+
+- **Enhanced Multi-turn Context**: Implement a windowed memory or summarization strategy in LangGraph to maintain deeper conversation state without exceeding LLM context limits.
+- **Two-stage Retrieval (Re-ranker)**: Add a Cross-Encoder re-ranking step after the initial vector search to improve precision and ensure the top 3-5 chunks are the most relevant to the query.
+- **Feedback-driven Optimization**: Add a "thumbs up/down" UI to collect user feedback on answer quality, enabling automated evaluation of retrieval performance and iterative tuning of chunking strategies.
+- **Support for Scanned PDFs (OCR)**: Integrate an OCR engine (e.g., Tesseract or Azure Document Intelligence) to handle scanned images and low-quality PDF inputs effectively.
+
