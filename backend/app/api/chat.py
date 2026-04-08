@@ -69,6 +69,27 @@ def _format_sources(chunks: list[ChunkResult]) -> list[dict]:
     return sources
 
 
+def _format_retrieved_chunks(chunks: list[ChunkResult]) -> list[dict]:
+    """Full chunk content for Layer 2 evaluation (Faithfulness / Context Recall).
+
+    Unlike _format_sources (which truncates to 100 chars for UI preview),
+    this includes the complete chunk text so the test framework can compare
+    the LLM response against the actual retrieved context.
+    """
+    result = []
+    for c in chunks:
+        meta = c.chunk_metadata or {}
+        result.append(
+            {
+                "content": c.content,
+                "source_book": meta.get("source_book", ""),
+                "chapter": meta.get("chapter", ""),
+                "relevance_score": round(c.relevance_score, 4),
+            }
+        )
+    return result
+
+
 def _build_context(chunks: list[ChunkResult]) -> str:
     if not chunks:
         return "（暂无相关参考资料）"
@@ -128,6 +149,8 @@ async def _generate_events(
                         "latency_ms": 0,
                         "conversation_id": str(conversation_id),
                         "cached": True,
+                        # Cache only stores content_preview; full chunks not available.
+                        "retrieved_chunks": [],
                     }
                 )
                 await save_message(
@@ -224,6 +247,10 @@ async def _generate_events(
                 "agent_used": agent,
                 "latency_ms": latency,
                 "conversation_id": str(conversation_id),
+                # Full chunk content for Layer 2 evaluation (Faithfulness /
+                # Context Recall). Distinct from the `sources` event which
+                # only carries a 100-char content_preview for UI display.
+                "retrieved_chunks": _format_retrieved_chunks(chunks),
             }
         )
 

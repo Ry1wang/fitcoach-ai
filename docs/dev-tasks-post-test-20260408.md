@@ -350,10 +350,30 @@
 **背景**：当前 SSE 流仅返回 `agent_used` 和 token 流，不携带检索片段，导致 Layer 2 的 Faithfulness 和 Context Recall 指标无法计算。
 
 **子任务**：
-- [ ] 在 `backend/app/api/chat.py` SSE 流 `done` 事件附加 `retrieved_chunks` 字段
-- [ ] 为前端"引用来源"展示能力打基础
+- [x] 在 `backend/app/api/chat.py` SSE 流 `done` 事件附加 `retrieved_chunks` 字段
+- [x] 为前端"引用来源"展示能力打基础
 
-**完成总结**：_（待填写）_
+**完成总结**（2026-04-08）
+
+- **完成前**：
+  - `sources` 事件的 `content_preview` 截断为 100 字符，Layer 2 评估框架无法从中获取完整检索文本
+  - `done` 事件只有 `agent_used` / `latency_ms` / `conversation_id`，不含任何检索片段
+  - Faithfulness（LLM 回答是否基于检索内容）和 Context Recall（检索内容是否覆盖正确答案）两项指标无法计算
+- **完成后**：
+  - `done` 事件新增 `retrieved_chunks` 字段，包含完整 chunk 文本 + `source_book` / `chapter` / `relevance_score`
+  - 新增辅助函数 `_format_retrieved_chunks(chunks)`，与 `_format_sources`（保留 preview 用于 UI）并列
+  - 缓存命中路径 `done` 事件返回 `"retrieved_chunks": []`（cache 只存了 preview，不重建全文）
+  - `sources` 事件格式、DB 存储结构均不变，完全向后兼容
+- **核心技术/策略**：
+  - **字段分离原则**：`sources`（100 字 preview）面向前端 UI；`retrieved_chunks`（完整 content）面向评估框架，两者职责分离，互不干扰
+  - **done 事件时机**：`retrieved_chunks` 随 `done` 一起发送（而非单独新增 event type），避免评估框架需要监听额外事件类型
+  - **关键文件**：`backend/app/api/chat.py`
+    - 新增 `_format_retrieved_chunks()` 函数
+    - 非缓存 `done` 事件追加 `retrieved_chunks`
+    - 缓存命中 `done` 事件追加 `retrieved_chunks: []`
+- **验证方式**：
+  - `docker exec fitcoach-backend python3 -c "import app.api.chat; print('OK')"` → OK
+  - 实际调用 `/chat` API，SSE 流末尾 `done` 事件含 `retrieved_chunks`，每条含完整 `content` 字段
 
 ---
 
