@@ -48,6 +48,13 @@ class Settings(BaseSettings):
 
     # Rate Limiting
     RATE_LIMIT_PER_MINUTE: int = 20
+    # User IDs (UUIDs as strings) that bypass the per-user rate limiter.
+    # Intended for dedicated test users running full regression sweeps
+    # (e.g. Layer 3 router accuracy, 100+ queries in a burst). Keep this
+    # list short and never add real production users — the limiter is the
+    # only defense against chat-endpoint abuse. Parsed from env as a JSON
+    # list, e.g. RATE_LIMIT_BYPASS_USER_IDS=["uuid-1","uuid-2"].
+    RATE_LIMIT_BYPASS_USER_IDS: list[str] = []
 
     # Bot integration (OpenClaw / Feishu)
     BOT_API_KEY: str = ""

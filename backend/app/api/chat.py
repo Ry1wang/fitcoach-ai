@@ -245,17 +245,22 @@ async def chat(
 ):
     redis = get_redis()
 
-    # Rate limit check
-    limiter = RateLimiter(redis, max_requests=settings.RATE_LIMIT_PER_MINUTE)
-    if not await limiter.check(str(current_user.id)):
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={
-                "error": "RATE_LIMIT_EXCEEDED",
-                "message": f"Maximum {settings.RATE_LIMIT_PER_MINUTE} requests per minute",
-            },
-            headers={"Retry-After": "60"},
-        )
+    # Rate limit check — bypassed for designated test users (see
+    # RATE_LIMIT_BYPASS_USER_IDS). The bypass list is empty by default;
+    # only populated in test deployments where a dedicated user needs to
+    # run full regression sweeps without hitting the 20 req/min ceiling.
+    user_id_str = str(current_user.id)
+    if user_id_str not in settings.RATE_LIMIT_BYPASS_USER_IDS:
+        limiter = RateLimiter(redis, max_requests=settings.RATE_LIMIT_PER_MINUTE)
+        if not await limiter.check(user_id_str):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={
+                    "error": "RATE_LIMIT_EXCEEDED",
+                    "message": f"Maximum {settings.RATE_LIMIT_PER_MINUTE} requests per minute",
+                },
+                headers={"Retry-After": "60"},
+            )
 
     # Validate / create conversation (before streaming so 404 is a proper HTTP error)
     conv = await get_or_create_conversation(

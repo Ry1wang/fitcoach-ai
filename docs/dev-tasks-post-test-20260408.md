@@ -107,11 +107,45 @@
 
 **背景**：Layer 3 连续 105 次 LLM 调用耗尽提供商 RPM 配额，导致测试结果虚低（accuracy 跌至 14.3%）。
 
-**子任务**：
-- [ ] 为测试环境配置独立的 LLM API Key（与生产隔离）
-- [ ] 或在后端增加 LLM 请求队列 / 限速器
+> ⚠️ **原背景描述基于误诊**。实施时核对代码后确认：真正的 429 来源是**后端自己的 Redis 速率限制器**（`RATE_LIMIT_PER_MINUTE=20`），**不是** LLM 提供商的 RPM 配额。证据：`KNOWN_ISSUES.md` 报告 105 条请求 0.74s 内全部返回 429 —— 这种响应速度只可能是本地 Redis 快速拒绝，LLM 提供商不会这么快。因此下面两条原子任务（独立 LLM Key / LLM 请求队列）都不对症，实际采用了**用户级白名单** 方案。
 
-**完成总结**：_（待填写）_
+**子任务**：
+- [x] ~~为测试环境配置独立的 LLM API Key（与生产隔离）~~ → **不适用**（误诊）
+- [x] ~~或在后端增加 LLM 请求队列 / 限速器~~ → **不适用**（后端已有限流器，问题本身就是限流器）
+- [x] **实际实施**：后端新增 `RATE_LIMIT_BYPASS_USER_IDS` 配置项，允许指定白名单用户绕过 Redis 速率限制器
+
+**完成总结**（2026-04-08）
+
+- **完成前**：
+  - 后端 `/api/v1/chat` 对每个用户固定窗口限流 20 req/min（通过 Redis `ratelimit:{user_id}:{bucket}`）
+  - 测试仓库 Layer 3 连续跑 105 条 query，即使加了 `L3_QUERY_DELAY=1.0`（1 req/s ≈ 60 req/min）依然超出 20 req/min 上限
+  - 结果：测试运行 accuracy 跌至 14.3%（90 条 429 + 15 条 cache 命中），FAIL
+  - 根因被 `KNOWN_ISSUES.md` 误记为 "LLM 提供商 RPM 配额"
+- **完成后**：
+  - 后端新增配置项 `RATE_LIMIT_BYPASS_USER_IDS: list[str] = []`（默认空，生产行为完全不变）
+  - `chat.py` 在调用限流器前判断用户 ID 是否在白名单，若是则完全跳过限流
+  - 部署时只需在 `.env` 设置 `RATE_LIMIT_BYPASS_USER_IDS=["<测试用户 UUID>"]` 即可让测试用户突发跑满 105 条无限流
+  - 生产用户仍受 20 req/min 保护（已验证：非白名单用户第 21 条起精确返回 429）
+- **核心技术/策略**：
+  - **用户级白名单**：不关闭限流器、不动窗口大小、不跨仓库改测试端，只在限流判断前加一个 O(1) set 查找
+  - **Pydantic list 解析**：直接在 settings 声明 `list[str]`，pydantic-settings 会自动从 `.env` 解析 JSON 数组（`RATE_LIMIT_BYPASS_USER_IDS=["uuid"]`）
+  - **关键文件**：
+    - `backend/app/config.py` — 新增 `RATE_LIMIT_BYPASS_USER_IDS`
+    - `backend/app/api/chat.py` — 限流判断前加 `if user_id_str not in settings.RATE_LIMIT_BYPASS_USER_IDS:`
+    - `.env.example` — 加配置注释示例（实际 `.env` 未动，留给部署方填入测试用户 ID）
+  - **被拒绝方案**：
+    - 独立 LLM API Key：误诊修复
+    - 后端 LLM 请求队列：误诊修复
+    - 全局抬高 `RATE_LIMIT_PER_MINUTE`：削弱生产防滥用
+    - `RATE_LIMIT_ENABLED: bool` 全局开关：误配风险高
+- **验证方式**：
+  - **Test 1（白名单用户 30 连发）**：0 × 429，30 × 404（顺利穿过限流器 → 下游 conversation 查找失败）
+  - **Test 2（非白名单用户 25 连发）**：前 20 × 404（限流器放行）+ 后 5 × 429（限流器精确拦截）
+  - 两项均使用 ASGI transport 打到真实 Redis，行为符合预期
+- **遗留事项**：
+  - **部署方操作**：在生产/测试 `.env` 中填入 `RATE_LIMIT_BYPASS_USER_IDS=["..."]`（本次不替部署方决定具体 UUID）
+  - **`KNOWN_ISSUES.md` 的 ISSUE-002 根因描述应修正为"后端 Redis 限流器"**（属于测试仓库 `fitcoach-ai-test`，跨仓库改动，留给用户确认后执行）
+  - **cache-aware 限流**（命中 query cache 不计入配额）作为后续优化，本次未做
 
 ---
 
