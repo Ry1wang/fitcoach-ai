@@ -59,33 +59,47 @@ def _extract_pages(file_path: str) -> list[dict[str, Any]]:
     except Exception as exc:
         raise ValueError(f"Failed to read PDF with PyMuPDF: {exc}") from exc
 
+    # Table extraction is best-effort and skipped for large PDFs (>500 pages)
+    # to avoid peak memory exceeding the container limit when pdfplumber
+    # accumulates page-object state across hundreds of pages.
+    _TABLE_EXTRACTION_PAGE_LIMIT = 500
+
     tables_by_page: dict[int, list[str]] = {}
-    try:
-        with pdfplumber.open(file_path) as pdf:
-            for page_num, page in enumerate(pdf.pages):
-                try:
-                    raw_tables = page.extract_tables()
-                except Exception:
-                    logger.warning("pdfplumber failed to extract tables from page %d, skipping", page_num)
-                    continue
-                if not raw_tables:
-                    continue
-                formatted = []
-                for table in raw_tables:
-                    rows = [
-                        " | ".join(str(cell) if cell else "" for cell in row)
-                        for row in table
-                        if row
-                    ]
-                    if rows:
-                        formatted.append("\n".join(rows))
-                if formatted:
-                    tables_by_page[page_num] = formatted
-    except ValueError:
-        raise
-    except Exception as exc:
-        # Table extraction is best-effort; log and continue without tables
-        logger.warning("pdfplumber failed to open PDF for table extraction: %s", exc)
+    if len(text_by_page) > _TABLE_EXTRACTION_PAGE_LIMIT:
+        logger.info(
+            "Skipping pdfplumber table extraction for %d-page PDF (limit %d)",
+            len(text_by_page),
+            _TABLE_EXTRACTION_PAGE_LIMIT,
+        )
+    else:
+        try:
+            with pdfplumber.open(file_path) as pdf:
+                for page_num in range(len(pdf.pages)):
+                    try:
+                        page = pdf.pages[page_num]
+                        raw_tables = page.extract_tables()
+                        page.flush_cache()  # release page-level cache to cap peak memory
+                    except Exception:
+                        logger.warning("pdfplumber failed to extract tables from page %d, skipping", page_num)
+                        continue
+                    if not raw_tables:
+                        continue
+                    formatted = []
+                    for table in raw_tables:
+                        rows = [
+                            " | ".join(str(cell) if cell else "" for cell in row)
+                            for row in table
+                            if row
+                        ]
+                        if rows:
+                            formatted.append("\n".join(rows))
+                    if formatted:
+                        tables_by_page[page_num] = formatted
+        except ValueError:
+            raise
+        except Exception as exc:
+            # Table extraction is best-effort; log and continue without tables
+            logger.warning("pdfplumber failed to open PDF for table extraction: %s", exc)
 
     pages = []
     for page_num in sorted(text_by_page.keys()):

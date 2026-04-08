@@ -303,11 +303,25 @@
 - **验证方式**：
   - `SELECT filename, chunk_count FROM documents ORDER BY chunk_count DESC` → 4 行，Redis Deep Dive 和 Foods PDF 均消失
   - `SELECT COUNT(*) FROM document_chunks` → 4188（原 4829 - 641 = 4188）
+- **子任务 2 追加（2026-04-08）**：
+  - 上传 `Advanced Sports Nutrition.pdf`（Dan Benardot，第 3 版，938 页）
+  - 上传过程中发现新 OOM 崩溃：pdfplumber 迭代 938 页时累积 page-object 状态，内存超过 2G 容器限制 → uvicorn 被 SIGKILL → 容器重启
+  - **根本修复（`backend/app/services/pdf_processor.py`）**：
+    - PDF > 500 页时跳过 pdfplumber 表格提取（仍用 PyMuPDF 提取全文）
+    - ≤500 页时改为 `pdf.pages[page_num]` 逐页访问 + `page.flush_cache()` 释放页面缓存，防止内存堆积
+  - 修复后重新 retry：938 页 / **2765 chunks** 成功 ingestion（约 2 分钟）
+- **最终语料库状态**：
+  | 书名 | chunks | 领域 |
+  |------|--------|------|
+  | Advanced Sports Nutrition | 2765 | nutrition |
+  | Starting Strength | 1470 | training |
+  | Rebuilding Milo | 1256 | rehab/training |
+  | Scientific Principles of Strength Training | 929 | training |
+  | 囚徒健身 | 533 | training |
+  | **合计** | **6953** | |
 - **遗留事项**：
-  - **子任务 2 待执行**：需用户提供以下类型的 PDF 上传（建议优先级）：
-    - 营养学文字版（替换 Foods, Nutrition and Sports Performance 的正版扫描版）
-    - 更多训练技术书籍（如 NSCA 相关、周期化训练等）
-  - 当前营养领域 0 本书，RAG 营养类问答将直接返回"暂无相关参考资料"
+  - 可继续补充营养学 / 训练技术书籍（当前营养领域已有 Advanced Sports Nutrition 打底）
+  - pdf_processor 的 500 页阈值可通过 `settings` 暴露为配置项（当前硬编码）
 
 ---
 
