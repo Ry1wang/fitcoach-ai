@@ -210,10 +210,29 @@
 **背景**：375px 视口下侧边栏与聊天区并排导致宽度超出，发送按钮 x+width=561px 超出视口。
 
 **子任务**：
-- [ ] 为前端侧边栏添加响应式断点（Tailwind `hidden md:flex`），<768px 折叠
-- [ ] 确保发送按钮在 375px 视口内
+- [x] 为前端侧边栏添加响应式断点（Tailwind `hidden md:flex`），<768px 折叠
+- [x] 确保发送按钮在 375px 视口内
 
-**完成总结**：_（待填写）_
+**完成总结**（2026-04-08）
+
+- **完成前**：
+  - `DocumentPanel`（w-72 = 288px）和 `ConversationList`（w-52 = 208px）固定宽度合计 496px，始终显示
+  - 375px 视口下两个侧边栏撑爆布局，发送按钮 x+width 达到 561px，完全超出视口
+- **完成后**：
+  - 两个侧边栏在 <768px（`md` 断点以下）自动折叠隐藏，聊天区占满全宽
+  - 发送按钮所在 `flex gap-2` 容器内 textarea `flex-1` + 按钮 `shrink-0`，375px 下正常显示
+  - ≥768px 桌面端行为完全不变
+- **核心技术/策略**：
+  - **最小改动**：仅修改两个组件根元素 class，从 `flex` 改为 `hidden md:flex`，无逻辑变更
+  - **关键文件**：
+    - `frontend/src/components/DocumentPanel.jsx` — 根 div class 加 `hidden md:flex`
+    - `frontend/src/components/ConversationList.jsx` — 根 div class 加 `hidden md:flex`
+- **验证方式**：
+  - Chrome DevTools → 375px 视口，两个侧边栏消失，聊天区占满全屏，发送按钮可见且在视口内
+  - 桌面宽度（≥768px）下侧边栏正常显示，布局无回归
+- **遗留事项**：
+  - 移动端用户无法访问文档管理和对话历史，v1 接受此限制（移动端以查阅为主）
+  - 后续可考虑添加汉堡菜单或抽屉组件让移动端用户访问侧边栏功能
 
 ---
 

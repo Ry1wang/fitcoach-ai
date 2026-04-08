@@ -66,7 +66,7 @@ export default function DocumentPanel() {
   };
 
   return (
-    <div className="flex w-72 shrink-0 flex-col border-r bg-white">
+    <div className="hidden md:flex w-72 shrink-0 flex-col border-r bg-white">
       {/* Header */}
       <div className="border-b px-4 py-3">
         <h2 className="text-sm font-semibold text-gray-700">文档管理</h2>

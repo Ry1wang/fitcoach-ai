@@ -47,7 +47,7 @@ export default function ConversationList({ activeId, onSelect, onNew }) {
   };
 
   return (
-    <div className="flex w-52 shrink-0 flex-col border-r bg-gray-50">
+    <div className="hidden md:flex w-52 shrink-0 flex-col border-r bg-gray-50">
       <div className="flex items-center justify-between border-b px-3 py-3">
         <h3 className="text-xs font-semibold text-gray-600">对话记录</h3>
         <button
