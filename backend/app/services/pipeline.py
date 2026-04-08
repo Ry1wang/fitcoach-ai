@@ -43,15 +43,16 @@ async def run_ingestion_pipeline(
             await update_document_status(
                 session, doc_id, user_id, status="processing"
             )
+            logger.info("Starting ingestion for doc_id=%s (%s)", doc_id, filename)
 
             # 2–4. Parse PDF and build chunk dicts
-            # Run sync CPU-intensive work in a thread pool to avoid blocking
-            # the event loop (PDF parsing + text splitting can be slow).
+            logger.info("Step 2/4: Chunking document %s...", filename)
             loop = asyncio.get_running_loop()
             raw_chunks = await loop.run_in_executor(
                 None, chunk_document, file_path, filename, domain
             )
             if not raw_chunks:
+                logger.warning("No text content extracted for doc_id=%s", doc_id)
                 await update_document_status(
                     session,
                     doc_id,
@@ -60,6 +61,8 @@ async def run_ingestion_pipeline(
                     error_message="No text content could be extracted from the PDF",
                 )
                 return
+            
+            logger.info("Step 5: Generating embeddings for %d chunks of %s...", len(raw_chunks), filename)
 
             # 5. Generate embeddings (async, batched, with retry)
             texts = [c["content"] for c in raw_chunks]
@@ -68,6 +71,8 @@ async def run_ingestion_pipeline(
                 raise RuntimeError(
                     f"Embedding count mismatch: expected {len(texts)}, got {len(embeddings)}"
                 )
+
+            logger.info("Step 7: Inserting %d chunks into DB for %s...", len(raw_chunks), filename)
 
             # 6. Verify document still exists (may have been deleted mid-processing)
             stmt = select(Document.id).where(
@@ -104,6 +109,7 @@ async def run_ingestion_pipeline(
                 status="ready",
                 chunk_count=len(db_chunks),
             )
+            logger.info("Successfully indexed doc_id=%s (%s) with %d chunks", doc_id, filename, len(db_chunks))
 
         except Exception as exc:  # noqa: BLE001
             logger.exception("Ingestion pipeline failed for doc_id=%s", doc_id)
