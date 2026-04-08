@@ -123,7 +123,26 @@ async def run_ingestion_pipeline(
             ]
             session.add_all(db_chunks)
 
-            # 8. Mark ready — commit also flushes the pending chunk inserts
+            # 8. Sanity-check chunk count before marking ready.
+            #    A real document must yield at least MIN_CHUNK_COUNT chunks;
+            #    fewer almost always means the PDF is a scanned image or has
+            #    no extractable text layer (silent extraction failure).
+            if len(db_chunks) < settings.MIN_CHUNK_COUNT:
+                error_msg = (
+                    f"Ingestion produced only {len(db_chunks)} chunk(s) "
+                    f"(minimum {settings.MIN_CHUNK_COUNT} required). "
+                    "The PDF may be a scanned image or have no extractable text."
+                )
+                logger.warning(
+                    "doc_id=%s (%s) produced only %d chunk(s) — marking failed",
+                    doc_id, filename, len(db_chunks),
+                )
+                await update_document_status(
+                    session, doc_id, user_id, status="failed", error_message=error_msg
+                )
+                return
+
+            # 9. Mark ready — commit also flushes the pending chunk inserts
             await update_document_status(
                 session,
                 doc_id,

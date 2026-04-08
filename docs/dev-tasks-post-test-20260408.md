@@ -382,10 +382,28 @@
 **背景**：当前 `status = ready` 不能证明向量写入完整，存在 pipeline 静默失败风险（与 ISSUE-001 OOM 史相关）。
 
 **子任务**：
-- [ ] Pipeline 完成后进行 chunk 数量健全性校验（<10 则标记 `failed` 而非 `ready`）
-- [ ] 在管理界面/API 暴露每个文档的 chunk 数
+- [x] Pipeline 完成后进行 chunk 数量健全性校验（<10 则标记 `failed` 而非 `ready`）
+- [x] 在管理界面/API 暴露每个文档的 chunk 数（已在 `DocumentResponse` 和前端实现，确认完整）
 
-**完成总结**：_（待填写）_
+**完成总结**（2026-04-08）
+
+- **完成前**：
+  - `status = ready` 不能证明向量写入完整——如任务 7 中发现的 `Foods, nutrition and sports performance.pdf`：pipeline 正常完成、状态置为 `ready`、`chunk_count = 2`，但 2 条全是无意义的 Anna's Archive 元数据，RAG 完全不可用，系统对此无感知
+  - `MIN_CHUNK_COUNT` 没有配置项，无法通过环境变量调整
+- **完成后**：
+  - Pipeline 在 `session.add_all(db_chunks)` 之后、`status → ready` 之前新增校验：`chunk_count < settings.MIN_CHUNK_COUNT` → 置为 `failed` 并写入可读的 `error_message`，前端直接展示
+  - `MIN_CHUNK_COUNT = 10` 作为配置项加入 `app/config.py`，可通过 `.env` 覆盖
+  - 子任务 2（API 暴露 chunk 数）：`DocumentResponse` schema 已含 `chunk_count`；前端 `DocumentPanel.jsx` 已显示「N 块」——确认已完整实现，无需改动
+- **核心技术/策略**：
+  - **校验位置**：chunks 已写入 session（`add_all`）但事务未提交时检查；count 不足则不提交 ready 状态，而是调用 `update_document_status(..., status="failed")` 回写错误原因
+  - **阈值选择**：10 是保守下界——真实书籍最少也有数十页可提取文本，合法文档几乎不可能 <10 chunks；而扫描版 PDF 或元数据文件往往只有 0–5 chunks
+  - **错误信息**：`"Ingestion produced only N chunk(s) (minimum 10 required). The PDF may be a scanned image or have no extractable text."` ——用户可见、可操作
+  - **关键文件**：
+    - `backend/app/config.py` — 新增 `MIN_CHUNK_COUNT: int = 10`
+    - `backend/app/services/pipeline.py` — 步骤 8 前插入 chunk count 校验
+- **验证方式**：
+  - 容器内逻辑断言：`len(chunks) < 10` → `would_fail = True`；`len(chunks) == 10` → `False`（边界正确）
+  - 回顾历史案例：Foods PDF（2 chunks）在新逻辑下将置为 `failed` 并提示扫描版；Starting Strength（1470 chunks）正常通过
 
 ---
 

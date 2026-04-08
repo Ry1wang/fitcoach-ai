@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     # uploaded back-to-back. Keep at 1 unless the container has plenty of
     # headroom.
     MAX_CONCURRENT_INGESTIONS: int = 1
+    # Minimum chunk count for a successfully ingested document.
+    # If the pipeline produces fewer chunks than this threshold the document
+    # is marked 'failed' instead of 'ready' — a low count almost always
+    # means the PDF is a scanned image or has no extractable text layer.
+    MIN_CHUNK_COUNT: int = 10
 
     # Agent
     AGENT_MAX_ITERATIONS: int = 5
