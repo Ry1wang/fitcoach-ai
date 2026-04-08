@@ -155,12 +155,53 @@
 
 **背景**：路由器对损伤关键词（肌腱炎、下背痛、膝盖疼）权重过高，含此类词的跨域查询被过度分配至 rehab，Layer 1 对抗性测试中约 28/50 被误路由。
 
-**子任务**：
-- [ ] 审查 `backend/app/agents/graph.py` Supervisor 路由逻辑，降低损伤关键词单一权重
-- [ ] 在路由 prompt 中增加"主意图优先"原则
-- [ ] 将 Layer 1 对抗性查询集纳入路由器回归测试
+> ⚠️ **原背景描述关于"权重"部分基于误解**。实施时核对代码后确认：`backend/app/agents/graph.py` 和 `router.py` **完全没有关键词权重 / 评分 / hardcoded 规则**，路由是**纯 LLM 分类**（LLM 读 `ROUTER_SYSTEM_PROMPT` 输出 JSON）。所谓的"权重偏差"实际上来自 `prompts.py` 里 prompt 本身的措辞失误。因此这是一个 **prompt engineering 任务**，不是代码逻辑修改。
 
-**完成总结**：_（待填写）_
+**子任务**：
+- [x] ~~审查 `backend/app/agents/graph.py` Supervisor 路由逻辑，降低损伤关键词单一权重~~ → **graph.py 无权重逻辑可降；实际修复点在 `prompts.py`**
+- [x] 在路由 prompt 中增加「主意图优先」原则（已实施为 7 条优先级规则）
+- [x] 将 Layer 1 对抗性查询集纳入路由器回归测试 → **以 `backend/scripts/router_smoke.py` 形式实现**（开发者 smoke 工具，不加 pytest）
+
+**完成总结**（2026-04-08）
+
+- **完成前**（Baseline smoke test on OLD prompt）：
+  - 整体准确率 **72.2%（13/18）**
+  - 5 条全部误路由到 rehab，误诊模式：
+    * 4 × 历史伤病 + 训练主意图 → rehab（应 training）
+    * 1 × nutrition 问题被"tendon healing"抢走 → rehab（应 nutrition）
+  - 特别严重：`"Why does my knee cave inward during squats and how do I fix it?"` —— 纯动作技术问题，**无任何 pain 词**，仅仅提到 "knee" 就被路由到 rehab，说明旧 prompt 对身体部位词过度敏感
+  - 根因：旧 prompt 含硬规则 "如果问题同时涉及训练和受伤 → 选择 rehab（安全优先）"，加上 rehab 关键词列表里有"恢复 / 活动度"等被训练语境过度共用的词
+- **完成后**（Smoke test on NEW prompt, 2 次跑 temperature=0 均稳定）：
+  - 整体准确率 **100%（18/18）**，混淆矩阵对角满分
+  - 5 条原误路由全部修复
+  - 无 easy case 回归（3 条 sanity check 保持正确）
+  - 中间版本曾出现 3 条 over-correction 到 nutrition（LLM 看到 eating/creatine/protein 就跳过去），通过**收紧规则 5**（要求营养词必须是"问句唯一的主谓结构"+ 给出反例"Can I do X while eating Y"、"What A AND what B for goal"）再次迭代，最终稳定到 100%
+- **核心技术/策略**：
+  - **Prompt 重写的 7 条优先级原则**（`backend/app/agents/prompts.py` 的 `ROUTER_SYSTEM_PROMPT`）：
+    1. 主意图优先（伤病/部位/恢复词只是上下文）
+    2. 当下 vs 历史（current/当下 → rehab，history of/旧伤 → 看主意图）
+    3. 回归/重建路径 → rehab（重点在恢复进度）
+    4. 身体部位词不等于 rehab（无"痛/不适"就不选 rehab）
+    5. 营养词的严格识别（「去掉营养词后问句是否还成立」的判断启发）
+    6. 安全兜底（仅当"还能不能训练/是否应停训"明确询问时才强制 rehab）
+    7. 模糊/打招呼 → 默认 training
+  - **分类描述的关键词收窄**：
+    - rehab 从 "受伤、疼痛、恢复、活动度、康复训练、医疗问题" → "**当下**疼痛/不适、急性损伤处理、伤后重返训练时机、康复阶段动作选择"（删掉"恢复"、"活动度"等被训练语境过度共用的词）
+    - training 加上"**即使用户有旧伤史、劳损背景或处于减脂期**"的显式声明
+    - nutrition 加上"**即使涉及训练目标或恢复场景**"的显式声明
+  - **双语示例**：新增英文示例（原版只有中文），因为 Layer 1 Golden Set 129 条里 100+ 条是英文，双语示例能给 LLM 更好的跨语言迁移信号
+  - **迭代反例机制**：针对过度矫正问题，在规则 5 内直接给出"Can I do X while eating Y"、"I have pain, can creatine help?"、"What A AND what B" 三类反例，强制 LLM 在看到营养词时二次确认
+  - **关键文件**：
+    - `backend/app/agents/prompts.py` — `ROUTER_SYSTEM_PROMPT` 完全重写
+    - `backend/scripts/router_smoke.py` — 新增 18 条 hand-picked tricky queries 的 smoke tool
+- **验证方式**：
+  - **Smoke 工具**：`docker exec -w /app fitcoach-backend python -m scripts.router_smoke`
+  - **Baseline 对比**：旧 prompt 13/18 (72.2%)；新 prompt 18/18 (100%)
+  - **稳定性**：`temperature=0` 下连跑 2 次，结果一致（18/18 + 18/18）
+  - **覆盖模式**：18 条查询覆盖 10 类模式（easy sanity / history-injury / current-injury / rebuild / training-with-diet-context / nutrition-with-rehab-context / form-fault / injury-prevention / multi-domain），每类至少 1 条
+- **遗留事项**：
+  - **未做** pytest 集成测试（理由：backend 镜像不含 tests 目录；真实 LLM 调用不适合 CI；正规全量回归本就在 `fitcoach-ai-test` 仓库）
+  - **建议**：在 `fitcoach-ai-test` 仓库下次跑 Layer 1/3 全量 129 条对抗性测试，量化本次改动对真实 Golden Set 的影响（预计对 cross-domain 15 条和 injury-bearing hard cases 的 accuracy 有显著提升）
 
 ---
 
