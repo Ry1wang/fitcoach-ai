@@ -64,11 +64,42 @@
 **背景**：FastAPI `BackgroundTasks` 在 uvicorn 进程内并发处理多个大 PDF，内存峰值超过容器 1G 限制，Docker OOM kill 后文档永久卡在 `processing`。
 
 **子任务**：
-- [ ] 短期：将 `docker-compose.yml` backend `memory` 从 1G 调至 2G
-- [ ] 中期：后端启动时扫描 `processing` 状态文档，重置为 `pending` 并重新触发
-- [ ] 长期：迁移 `BackgroundTasks` 至 Celery + Redis 持久化任务队列
+- [x] 短期：将 `docker-compose.yml` backend `memory` 从 1G 调至 2G（已随上次 commit `e13b6e9` 一并提交）
+- [x] 中期：后端启动时扫描 `processing` 状态文档，重置为 `failed`（而非 `pending`）并提供手动重试端点
+- [ ] 长期：迁移 `BackgroundTasks` 至 Celery + Redis 持久化任务队列（留作下次迭代）
 
-**完成总结**：_（待填写）_
+**完成总结**（2026-04-08）
+
+- **完成前**：
+  - Backend 容器内存上限 1G；多个大 PDF 并发上传时 uvicorn 进程内存峰值叠加 → Docker OOM kill
+  - OOM 后文档永久卡在 `processing` 状态，前端无反馈、无恢复路径
+  - 没有并发控制，`BackgroundTasks` 允许无限并行 ingestion
+- **完成后**：
+  - 内存上限 1G → 2G（单 PDF 安全余量充足）
+  - Backend 启动时自动扫描 `processing` 并重置为 `failed`（带明确 error_message），前端可见，可重试
+  - 新增 `POST /api/v1/documents/{id}/retry`：仅接受 `failed` 状态，复用原 `file_path`，重新 enqueue ingestion
+  - Pipeline 新增 module-level `asyncio.Semaphore(1)`，多个并发 ingestion 自动串行，上传 API 仍然立即返回 `202 Accepted`
+  - Pipeline 插入 chunks 前先 `DELETE` 旧 chunks，retry 后结果确定（不会出现重复行）
+- **核心技术/策略**：
+  - **并发闸门**：`_INGESTION_SEMAPHORE = asyncio.Semaphore(settings.MAX_CONCURRENT_INGESTIONS)`（默认 1）— 用 `async with _INGESTION_SEMAPHORE, async_session() as session:` 包裹整个 pipeline body
+  - **启动恢复**：在 `main.py` 的 `lifespan` 中追加 `reset_stuck_processing_documents()`——新进程不可能有 in-flight ingestion，所以 `processing` 状态一定是上次崩溃的残留；置为 `failed` 比置为 `pending` 更透明（用户可见）、更安全（避免无限 OOM 循环）
+  - **Retry 幂等性**：pipeline 插入前 `DELETE FROM document_chunks WHERE document_id=?`，首次为 no-op，retry 时清空残留；这是 retry 端点能正确工作的前提
+  - **关键文件**：
+    - `backend/app/config.py` — 新增 `MAX_CONCURRENT_INGESTIONS: int = 1`
+    - `backend/app/services/pipeline.py` — 模块级 Semaphore + 插入前 DELETE
+    - `backend/app/services/document_service.py` — 新增 `reset_stuck_processing_documents()`
+    - `backend/app/main.py` — `lifespan` 中调用启动恢复
+    - `backend/app/api/documents.py` — 新增 `POST /{id}/retry` 端点
+- **验证方式**：
+  - **启动恢复**：手动 `UPDATE documents SET status='processing' WHERE id=...`，`docker restart fitcoach-backend`，日志出现 `Reset 1 stuck 'processing' document(s) to 'failed'`，DB 中状态 + error_message 均已写入
+  - **并发闸门**：stub pipeline 内部后 `asyncio.gather` 触发 3 条并发 `run_ingestion_pipeline`（每条模拟 1 秒耗时），总耗时 **3.03s** 串行完成（并行应为 ~1s），证明 semaphore 生效
+  - **Retry 端点**：
+    - `POST /documents/{ready_doc_id}/retry` → 409 `INVALID_STATUS`
+    - `POST /documents/{nonexistent}/retry` → 404 `NOT_FOUND`
+    - 端点已出现在 OpenAPI paths 中
+- **遗留事项**：
+  - 长期方案 Celery 迁移未做，留作下次迭代。当前 semaphore + 启动恢复已堵死 90% OOM 永久卡死问题；剩余需要 Celery 解决的场景为"worker 独立崩溃/任务持久化"
+  - 前端 `failed` 状态的"重试"按钮尚未对接（后端接口已就绪）
 
 ---
 

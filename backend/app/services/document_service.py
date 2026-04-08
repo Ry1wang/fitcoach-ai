@@ -73,6 +73,38 @@ async def update_document_status(
     return doc
 
 
+async def reset_stuck_processing_documents(session: AsyncSession) -> list[uuid.UUID]:
+    """Find documents stuck in 'processing' state and mark them 'failed'.
+
+    Called on backend startup: a fresh uvicorn process cannot have any
+    real in-flight ingestion, so any row still at 'processing' must be a
+    leftover from a previous crash (OOM kill, manual restart, host reboot).
+    Marking them 'failed' gives the user visible feedback and unblocks the
+    retry endpoint.
+
+    Returns the list of document IDs that were reset.
+    """
+    stmt = select(Document).where(Document.status == "processing")
+    result = await session.execute(stmt)
+    stuck = list(result.scalars().all())
+    if not stuck:
+        return []
+
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    reset_ids: list[uuid.UUID] = []
+    for doc in stuck:
+        doc.status = "failed"
+        doc.error_message = (
+            "Ingestion interrupted by server restart (likely OOM or crash). "
+            "Please retry."
+        )
+        doc.updated_at = now
+        session.add(doc)
+        reset_ids.append(doc.id)
+    await session.commit()
+    return reset_ids
+
+
 async def delete_document(
     session: AsyncSession, doc_id: uuid.UUID, user_id: uuid.UUID
 ) -> bool:

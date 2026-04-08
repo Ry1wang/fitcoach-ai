@@ -13,6 +13,7 @@ from app.services.document_service import (
     delete_document,
     get_document_by_id,
     list_documents,
+    update_document_status,
 )
 from app.services.pipeline import run_ingestion_pipeline
 
@@ -138,6 +139,79 @@ async def get_document(
             detail={"error": "NOT_FOUND", "message": "Document not found"},
         )
     return DocumentResponse.model_validate(doc)
+
+
+@router.post(
+    "/{document_id}/retry",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=DocumentUploadResponse,
+)
+async def retry_document_ingestion(
+    document_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+):
+    """Retry ingestion for a document previously left in 'failed' state.
+
+    Common causes for 'failed' state: OOM kill, server restart during
+    ingestion, transient parsing/embedding errors. The original uploaded
+    file is still on disk (delete_document removes it), so we simply
+    reset the status to 'pending' and re-enqueue the pipeline.
+    """
+    doc = await get_document_by_id(session, document_id, current_user.id)
+    if doc is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "NOT_FOUND", "message": "Document not found"},
+        )
+
+    if doc.status != "failed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "error": "INVALID_STATUS",
+                "message": (
+                    f"Only 'failed' documents can be retried; current status is "
+                    f"'{doc.status}'"
+                ),
+            },
+        )
+
+    # Verify the file still exists on disk — otherwise retry is impossible.
+    if not doc.file_path or not Path(doc.file_path).exists():
+        raise HTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail={
+                "error": "FILE_MISSING",
+                "message": "Original upload file is no longer on disk; please re-upload",
+            },
+        )
+
+    # Reset status + clear previous error, then re-enqueue.
+    await update_document_status(
+        session,
+        document_id,
+        current_user.id,
+        status="pending",
+        error_message="",  # clear the stale error; update_document_status only updates if not None
+    )
+
+    background_tasks.add_task(
+        run_ingestion_pipeline,
+        doc_id=doc.id,
+        user_id=current_user.id,
+        file_path=doc.file_path,
+        filename=doc.filename,
+        domain=doc.domain,
+    )
+
+    return DocumentUploadResponse(
+        id=doc.id,
+        filename=doc.filename,
+        status="pending",
+        created_at=doc.created_at,
+    )
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)

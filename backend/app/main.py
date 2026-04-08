@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -9,7 +10,10 @@ from app.api import chat as chat_router
 from app.api import compat as compat_router
 from app.api import conversations as conversations_router
 from app.api import documents as documents_router
-from app.deps import close_redis, engine, get_redis
+from app.deps import async_session, close_redis, engine, get_redis
+from app.services.document_service import reset_stuck_processing_documents
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -30,6 +34,24 @@ async def lifespan(app: FastAPI):
         print("✓ Redis connection verified")
     except Exception as e:
         print(f"✗ Redis connection failed: {e}")
+
+    # Recover documents stuck in 'processing' from a previous crash/OOM.
+    # This is safe because a fresh uvicorn process cannot have real
+    # in-flight ingestion — any such row must be a leftover.
+    try:
+        async with async_session() as session:
+            reset_ids = await reset_stuck_processing_documents(session)
+        if reset_ids:
+            logger.warning(
+                "Reset %d stuck 'processing' document(s) to 'failed': %s",
+                len(reset_ids),
+                [str(i) for i in reset_ids],
+            )
+            print(f"✓ Recovered {len(reset_ids)} stuck document(s) → failed")
+        else:
+            print("✓ No stuck documents to recover")
+    except Exception as e:
+        print(f"✗ Stuck-document recovery failed: {e}")
 
     yield
 

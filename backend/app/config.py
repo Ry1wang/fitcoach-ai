@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "/app/uploads"
     MAX_FILE_SIZE_MB: int = 50
     ALLOWED_EXTENSIONS: list[str] = [".pdf"]
+    # Max number of ingestion pipelines allowed to run concurrently in one
+    # uvicorn process. Guards against OOM when multiple large PDFs are
+    # uploaded back-to-back. Keep at 1 unless the container has plenty of
+    # headroom.
+    MAX_CONCURRENT_INGESTIONS: int = 1
 
     # Agent
     AGENT_MAX_ITERATIONS: int = 5

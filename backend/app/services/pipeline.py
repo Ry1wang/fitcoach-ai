@@ -6,14 +6,23 @@ from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
+from app.config import settings
 from app.deps import async_session
 from app.models.document import Document
 from app.models.document_chunk import DocumentChunk
 from app.services.document_service import update_document_status
 from app.services.embedding_service import generate_embeddings
 from app.services.pdf_processor import chunk_document
+
+# Module-level semaphore: caps the number of ingestion pipelines that can
+# run concurrently inside one uvicorn process. Guards against OOM when
+# multiple large PDFs are uploaded in parallel — without this, FastAPI
+# BackgroundTasks happily runs them all at once and memory peaks stack up.
+# Tasks still get enqueued instantly (upload endpoint returns 202 right
+# away); they just serialize here.
+_INGESTION_SEMAPHORE = asyncio.Semaphore(settings.MAX_CONCURRENT_INGESTIONS)
 
 
 def _utcnow() -> datetime:
@@ -33,11 +42,14 @@ async def run_ingestion_pipeline(
     Creates its own DB session — the request session is already closed
     by the time this runs.
 
+    Concurrency is capped by ``_INGESTION_SEMAPHORE`` (default 1) so that
+    multiple simultaneous uploads serialize instead of fighting for memory.
+
     Status transitions:
         pending → processing → ready
         pending → processing → failed  (on any exception)
     """
-    async with async_session() as session:
+    async with _INGESTION_SEMAPHORE, async_session() as session:
         try:
             # 1. Mark as processing
             await update_document_status(
@@ -61,7 +73,7 @@ async def run_ingestion_pipeline(
                     error_message="No text content could be extracted from the PDF",
                 )
                 return
-            
+
             logger.info("Step 5: Generating embeddings for %d chunks of %s...", len(raw_chunks), filename)
 
             # 5. Generate embeddings (async, batched, with retry)
@@ -86,7 +98,17 @@ async def run_ingestion_pipeline(
                 )
                 return
 
-            # 7. Batch-insert chunks
+            # 7a. Clear any pre-existing chunks for this document. Normally
+            # this is a no-op (first ingestion), but for retries of a 'failed'
+            # document there may be stale rows from a partial previous run —
+            # or, with the retry endpoint, the document may have been fully
+            # ingested before. We want the final state to be deterministic:
+            # exactly the chunks from this run.
+            await session.execute(
+                delete(DocumentChunk).where(DocumentChunk.document_id == doc_id)
+            )
+
+            # 7b. Batch-insert chunks
             db_chunks = [
                 DocumentChunk(
                     document_id=doc_id,
