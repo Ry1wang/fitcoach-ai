@@ -2,6 +2,5 @@ __pycache__
 *.pyc
 .env
 .git
-tests/
 htmlcov/
 .pytest_cache/

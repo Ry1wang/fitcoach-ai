@@ -241,11 +241,33 @@
 **背景**：测试套件与应用代码分离，无法注入 mock LLM 覆盖 LLM 空响应/超时/格式错误三种降级路径。
 
 **子任务**：
-- [ ] 在 `backend/app/agents/` 下为 training / rehab / nutrition agent 各添加单元测试
-- [ ] 覆盖三类场景：LLM 空响应、超时、格式错误
-- [ ] 使用 mock LLM client 注入
+- [x] 在 `backend/tests/unit/` 下为 training / rehab / nutrition agent 各添加单元测试
+- [x] 覆盖三类场景：LLM 空响应、超时、格式错误
+- [x] 使用 mock LLM client 注入
 
-**完成总结**：_（待填写）_
+**完成总结**（2026-04-08）
+
+- **完成前**：
+  - `backend/.dockerignore` 将 `tests/` 排除出 Docker 镜像，生产容器内无测试目录
+  - 三个 specialist 节点（training / rehab / nutrition）无任何 mock 单元测试
+  - 无法在不依赖真实 LLM 的情况下验证降级行为（空响应、超时、API 错误）
+- **完成后**：
+  - 新增 `backend/tests/unit/test_specialist_agents.py`，12 条参数化单元测试，全部通过（0.21s）
+  - 覆盖 3 个节点 × 4 场景（happy path + 空响应 + 超时 + LLM 错误）= 12 条
+  - `backend/.dockerignore` 去掉 `tests/` 排除，Docker 镜像现包含测试目录
+  - 运行命令：`docker exec -w /app fitcoach-backend python -m pytest tests/unit/test_specialist_agents.py -v`
+- **核心技术/策略**：
+  - **Mock 注入点**：`patch("app.agents.specialist.retrieve")` + `patch("app.agents.specialist.call_llm")` + `patch("app.agents.specialist.get_llm_client")`——三个模块级引用全部在 specialist.py 作用域内打桩，无需改动业务代码
+  - **三类降级场景**：
+    1. **空响应**：`mock_call_llm.return_value = ""`——训练/营养节点返回 `response=""`；rehab 节点返回 `response=REHAB_DISCLAIMER`（验证了免责声明的强制追加逻辑）
+    2. **超时**：`mock_call_llm.side_effect = TimeoutError(...)`——验证节点无 try/except，异常向上传播（调用方负责处理）
+    3. **LLM 错误**：`mock_call_llm.side_effect = RuntimeError("rate limit exceeded")`——同上，验证非超时异常也不被吞掉
+  - **关键文件**：
+    - `backend/tests/unit/test_specialist_agents.py`（新增，12 条测试）
+    - `backend/.dockerignore`（去掉 `tests/` 行，使测试目录进入镜像）
+- **验证方式**：
+  - `docker exec -w /app fitcoach-backend python -m pytest tests/unit/test_specialist_agents.py -v` → **12 passed, 0 failed**（0.21s）
+  - 特别验证：`test_rehab_node_empty_response_still_appends_disclaimer` 确认 `response == REHAB_DISCLAIMER`（即使 LLM 返回空字符串，免责声明不丢失）
 
 ---
 
