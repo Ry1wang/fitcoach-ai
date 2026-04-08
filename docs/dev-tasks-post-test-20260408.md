@@ -277,51 +277,41 @@
 
 **子任务**：
 - [x] 移除无关文档《Redis Deep Dive.pdf》
-- [ ] 上传技术细节更丰富的训练类书籍（**需用户提供 PDF 文件**）
+- [x] 上传技术细节更丰富的训练类书籍（《Advanced Sports Nutrition》Dan Benardot）
 - [x] 检查其他已上传 PDF 的 chunk 质量
 
 **完成总结**（2026-04-08）
 
 - **完成前**：
-  - 语料库共 6 本书 / 4829 chunks，其中：
-    - `Redis® Deep Dive.pdf`：639 chunks，与健身完全无关，占 top-k 名额
-    - `Foods, nutrition and sports performance.pdf`：chunk 数仅 2——检查发现是**扫描版 PDF（图片内容）**，text layer 只有 Anna's Archive 元数据（DuXiu 集合说明），无任何营养学实质内容
-  - 两本无效书籍合计 641 chunks，每次检索都有机会挤占 top-k，污染生成质量
+  - 语料库共 6 本书 / 4829 chunks，质量问题：
+    - `Redis® Deep Dive.pdf`（639 chunks）：与健身完全无关，占 top-k 名额
+    - `Foods, nutrition and sports performance.pdf`（2 chunks）：扫描版 PDF（DuXiu 图片扫描集），text layer 仅含 Anna's Archive 元数据，无营养学实质内容
+  - 营养领域 0 本有效书籍，营养类问答返回"暂无参考资料"
 - **完成后**：
-  - 直接在 `fitcoach-db` 容器执行 `DELETE FROM documents WHERE id=...`（ON DELETE CASCADE 自动清空对应 chunks）
-  - 同步删除 `fitcoach-backend:/app/uploads/...` 下的物理 PDF 文件
-  - 剩余语料库：**4 本书 / 4188 chunks**，全部与健身相关：
-    | 书名 | chunks |
-    |------|--------|
-    | Starting Strength | 1470 |
-    | Rebuilding Milo | 1256 |
-    | Scientific Principles of Strength Training | 929 |
-    | 囚徒健身 | 533 |
+  - 移除 2 本无效书籍（641 chunks），新增 1 本高质量营养学书籍（2765 chunks）
+  - 最终语料库 **5 本书 / 6953 chunks**，覆盖训练、康复、营养三大领域：
+    | 书名 | chunks | 领域 |
+    |------|--------|------|
+    | Advanced Sports Nutrition（Dan Benardot） | 2765 | nutrition |
+    | Starting Strength | 1470 | training |
+    | Rebuilding Milo | 1256 | rehab/training |
+    | Scientific Principles of Strength Training | 929 | training |
+    | 囚徒健身 | 533 | training |
 - **核心技术/策略**：
-  - **直接 DB 操作**（无需 API）：`DELETE FROM documents WHERE id='...'` 级联删除所有 chunks
-  - **Foods PDF 根因**：扫描书 PDF（DuXiu 图片扫描集），PyMuPDF/pdfplumber 提取不到文字，仅提取到最后一页的元数据说明；应替换为含文本层的版本（如 O'Reilly 或官网 PDF）
+  - **语料库清理**：`DELETE FROM documents WHERE id='...'`（ON DELETE CASCADE 自动清空 chunks）+ 删除 `/app/uploads/` 物理文件
+  - **Foods PDF 根因**：DuXiu 图片扫描，PyMuPDF 提取不到正文，text layer 仅有最后一页元数据
+  - **上传新书时发现 OOM 新问题**：pdfplumber 迭代 938 页时累积 page-object 状态，内存峰值超 2G 容器限制 → uvicorn 被 SIGKILL，容器重启
+  - **OOM 修复（`backend/app/services/pdf_processor.py`）**：
+    - PDF > 500 页时完全跳过 pdfplumber（仍用 PyMuPDF 提取全文，仅损失表格结构化）
+    - PDF ≤ 500 页时改为 `pdf.pages[page_num]` 逐页访问 + `page.flush_cache()` 释放页面缓存
+  - **关键文件**：`backend/app/services/pdf_processor.py`（`_extract_pages` 函数）
 - **验证方式**：
-  - `SELECT filename, chunk_count FROM documents ORDER BY chunk_count DESC` → 4 行，Redis Deep Dive 和 Foods PDF 均消失
-  - `SELECT COUNT(*) FROM document_chunks` → 4188（原 4829 - 641 = 4188）
-- **子任务 2 追加（2026-04-08）**：
-  - 上传 `Advanced Sports Nutrition.pdf`（Dan Benardot，第 3 版，938 页）
-  - 上传过程中发现新 OOM 崩溃：pdfplumber 迭代 938 页时累积 page-object 状态，内存超过 2G 容器限制 → uvicorn 被 SIGKILL → 容器重启
-  - **根本修复（`backend/app/services/pdf_processor.py`）**：
-    - PDF > 500 页时跳过 pdfplumber 表格提取（仍用 PyMuPDF 提取全文）
-    - ≤500 页时改为 `pdf.pages[page_num]` 逐页访问 + `page.flush_cache()` 释放页面缓存，防止内存堆积
-  - 修复后重新 retry：938 页 / **2765 chunks** 成功 ingestion（约 2 分钟）
-- **最终语料库状态**：
-  | 书名 | chunks | 领域 |
-  |------|--------|------|
-  | Advanced Sports Nutrition | 2765 | nutrition |
-  | Starting Strength | 1470 | training |
-  | Rebuilding Milo | 1256 | rehab/training |
-  | Scientific Principles of Strength Training | 929 | training |
-  | 囚徒健身 | 533 | training |
-  | **合计** | **6953** | |
+  - `SELECT filename, chunk_count FROM documents ORDER BY chunk_count DESC` → 5 行，无 Redis / Foods
+  - `SELECT COUNT(*) FROM document_chunks` → 6953
+  - Advanced Sports Nutrition 上传：938 页，修复后约 2 分钟完成，`chunk_count = 2765`
 - **遗留事项**：
-  - 可继续补充营养学 / 训练技术书籍（当前营养领域已有 Advanced Sports Nutrition 打底）
-  - pdf_processor 的 500 页阈值可通过 `settings` 暴露为配置项（当前硬编码）
+  - 可继续补充营养学 / 训练技术书籍（建议：The Protein Book、NSCA 相关）
+  - pdf_processor 的 500 页阈值目前硬编码，可后续提取为 `settings.PDF_TABLE_EXTRACTION_MAX_PAGES`
 
 ---
 
