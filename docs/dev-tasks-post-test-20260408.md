@@ -276,11 +276,38 @@
 **背景**：语料库混入无关书籍（Redis Deep Dive），占用 top-k 名额；RAG 答案质量天花板受语料库限制。
 
 **子任务**：
-- [ ] 移除无关文档《Redis Deep Dive.pdf》
-- [ ] 上传技术细节更丰富的训练类书籍
-- [ ] 检查其他已上传 PDF 的 chunk 质量
+- [x] 移除无关文档《Redis Deep Dive.pdf》
+- [ ] 上传技术细节更丰富的训练类书籍（**需用户提供 PDF 文件**）
+- [x] 检查其他已上传 PDF 的 chunk 质量
 
-**完成总结**：_（待填写）_
+**完成总结**（2026-04-08）
+
+- **完成前**：
+  - 语料库共 6 本书 / 4829 chunks，其中：
+    - `Redis® Deep Dive.pdf`：639 chunks，与健身完全无关，占 top-k 名额
+    - `Foods, nutrition and sports performance.pdf`：chunk 数仅 2——检查发现是**扫描版 PDF（图片内容）**，text layer 只有 Anna's Archive 元数据（DuXiu 集合说明），无任何营养学实质内容
+  - 两本无效书籍合计 641 chunks，每次检索都有机会挤占 top-k，污染生成质量
+- **完成后**：
+  - 直接在 `fitcoach-db` 容器执行 `DELETE FROM documents WHERE id=...`（ON DELETE CASCADE 自动清空对应 chunks）
+  - 同步删除 `fitcoach-backend:/app/uploads/...` 下的物理 PDF 文件
+  - 剩余语料库：**4 本书 / 4188 chunks**，全部与健身相关：
+    | 书名 | chunks |
+    |------|--------|
+    | Starting Strength | 1470 |
+    | Rebuilding Milo | 1256 |
+    | Scientific Principles of Strength Training | 929 |
+    | 囚徒健身 | 533 |
+- **核心技术/策略**：
+  - **直接 DB 操作**（无需 API）：`DELETE FROM documents WHERE id='...'` 级联删除所有 chunks
+  - **Foods PDF 根因**：扫描书 PDF（DuXiu 图片扫描集），PyMuPDF/pdfplumber 提取不到文字，仅提取到最后一页的元数据说明；应替换为含文本层的版本（如 O'Reilly 或官网 PDF）
+- **验证方式**：
+  - `SELECT filename, chunk_count FROM documents ORDER BY chunk_count DESC` → 4 行，Redis Deep Dive 和 Foods PDF 均消失
+  - `SELECT COUNT(*) FROM document_chunks` → 4188（原 4829 - 641 = 4188）
+- **遗留事项**：
+  - **子任务 2 待执行**：需用户提供以下类型的 PDF 上传（建议优先级）：
+    - 营养学文字版（替换 Foods, Nutrition and Sports Performance 的正版扫描版）
+    - 更多训练技术书籍（如 NSCA 相关、周期化训练等）
+  - 当前营养领域 0 本书，RAG 营养类问答将直接返回"暂无相关参考资料"
 
 ---
 
