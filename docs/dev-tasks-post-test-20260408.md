@@ -322,9 +322,26 @@
 **背景**：`app.services.pipeline` logger 有效级别为 WARNING，INFO 进度日志不输出，导致 OOM 问题难以诊断。
 
 **子任务**：
-- [ ] 在 `backend/app/main.py` 启动配置中显式设置 `app.services.pipeline` logger 为 INFO
+- [x] 在 `backend/app/main.py` 启动配置中显式设置 `app.services.pipeline` logger 为 INFO
 
-**完成总结**：_（待填写）_
+**完成总结**（2026-04-08）
+
+- **完成前**：
+  - `pipeline.py` 中有详细的 INFO 进度日志（"Step 2/4: Chunking..."、"Step 5: Generating embeddings..."、"Successfully indexed..."），但 uvicorn 默认不为 `app.*` 命名空间设置有效级别，logger 继承 root logger 的 WARNING 级别，INFO 日志全部被吞掉
+  - 实际影响：OOM 崩溃排查期间无法从日志判断 pipeline 进度（上传完成后容器直接重启，无中间日志）
+- **完成后**：
+  - `app.services.pipeline` logger 有效级别 = INFO，ingestion 步骤日志正常输出到容器 stdout
+- **核心技术/策略**：
+  - 在 `main.py` 模块层级（所有路由 import 之后、FastAPI 实例化之前）加一行：
+    ```python
+    logging.getLogger("app.services.pipeline").setLevel(logging.INFO)
+    ```
+  - 选择模块层级而非 `lifespan` 函数内：logger 级别在模块 import 时即生效，早于任何 BackgroundTask 启动
+  - 不改动 uvicorn 启动参数，不影响其他 logger 的输出级别
+  - **关键文件**：`backend/app/main.py`
+- **验证方式**：
+  - `docker exec fitcoach-backend python3 -c "import app.main; import logging; print(logging.getLevelName(logging.getLogger('app.services.pipeline').level))"` → `INFO`
+  - 上传新 PDF 后 `docker logs fitcoach-backend` 可见 "Step 2/4: Chunking..."、"Step 5: Generating embeddings..." 等进度行
 
 ---
 

@@ -13,6 +13,12 @@ from app.api import documents as documents_router
 from app.deps import async_session, close_redis, engine, get_redis
 from app.services.document_service import reset_stuck_processing_documents
 
+# Ensure ingestion pipeline progress logs (INFO) are visible.
+# Uvicorn's default log config leaves application loggers at WARNING;
+# without this line the step-by-step chunking / embedding / insert
+# messages in pipeline.py are silently swallowed.
+logging.getLogger("app.services.pipeline").setLevel(logging.INFO)
+
 logger = logging.getLogger(__name__)
 
 
