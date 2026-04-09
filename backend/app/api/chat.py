@@ -1,4 +1,5 @@
 """POST /chat — SSE streaming chat endpoint with Redis caching and rate limiting."""
+import asyncio
 import json
 import logging
 import time
@@ -254,6 +255,20 @@ async def _generate_events(
             }
         )
 
+    except asyncio.CancelledError:
+        # Client disconnected mid-stream.  Roll back to release the asyncpg
+        # connection cleanly before it is returned to the pool — prevents the
+        # next request from receiving a stale/closed connection (pool pollution).
+        logger.info(
+            "SSE stream cancelled (client disconnect) user_id=%s conversation_id=%s",
+            user_id,
+            conversation_id,
+        )
+        try:
+            await session.rollback()
+        except Exception:  # noqa: BLE001
+            pass  # best-effort; connection may already be gone
+        raise  # must re-raise so anyio/uvicorn completes the cancel sequence
     except Exception as exc:  # noqa: BLE001
         logger.exception("SSE stream error for user_id=%s conversation_id=%s", user_id, conversation_id)
         yield _sse({"type": "error", "message": str(exc), "code": "INTERNAL_ERROR"})
